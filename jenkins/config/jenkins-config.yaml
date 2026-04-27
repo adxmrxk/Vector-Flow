@@ -1,0 +1,117 @@
+# =========================
+# Jenkins Configuration as Code
+# =========================
+# Install plugins: configuration-as-code, job-dsl
+
+jenkins:
+  systemMessage: "VectorFlow CI/CD Server"
+  numExecutors: 4
+  mode: NORMAL
+  scmCheckoutRetryCount: 3
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+
+  authorizationStrategy:
+    roleBased:
+      roles:
+        global:
+          - name: "admin"
+            permissions:
+              - "Overall/Administer"
+            entries:
+              - user: "admin"
+          - name: "developer"
+            permissions:
+              - "Overall/Read"
+              - "Job/Build"
+              - "Job/Read"
+              - "Job/Workspace"
+            entries:
+              - group: "developers"
+
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "DOCKER_REGISTRY"
+            value: "${DOCKER_REGISTRY:-localhost:5000}"
+          - key: "K8S_NAMESPACE"
+            value: "vectorflow"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "docker-registry-credentials"
+              username: "${DOCKER_USERNAME}"
+              password: "${DOCKER_PASSWORD}"
+              description: "Docker Registry Credentials"
+
+          - file:
+              scope: GLOBAL
+              id: "kubeconfig"
+              fileName: "kubeconfig"
+              secretBytes: "${KUBECONFIG_BASE64}"
+              description: "Kubernetes Config"
+
+          - string:
+              scope: GLOBAL
+              id: "docker-registry-url"
+              secret: "${DOCKER_REGISTRY}"
+              description: "Docker Registry URL"
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8090/}"
+    adminAddress: "admin@vectorflow.local"
+
+  globalLibraries:
+    libraries:
+      - name: "vectorflow-shared-library"
+        defaultVersion: "main"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "${GIT_REPO_URL}"
+                credentialsId: "github-credentials"
+
+  gitHubPluginConfig:
+    hookUrl: "${JENKINS_URL}/github-webhook/"
+
+  timestamper:
+    allPipelines: true
+    elapsedTimeFormat: "'<b>'HH:mm:ss.S'</b> '"
+    systemTimeFormat: "'<b>'HH:mm:ss'</b> '"
+
+jobs:
+  - script: |
+      multibranchPipelineJob('vectorflow') {
+        displayName('VectorFlow Pipeline')
+        description('Multi-branch pipeline for VectorFlow')
+
+        branchSources {
+          github {
+            id('vectorflow-github')
+            repoOwner('${GITHUB_ORG}')
+            repository('vectorflow')
+            scanCredentialsId('github-credentials')
+          }
+        }
+
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(10)
+          }
+        }
+
+        triggers {
+          periodic(5)
+        }
+      }
