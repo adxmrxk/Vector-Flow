@@ -1,0 +1,91 @@
+# =========================
+# VectorFlow Kustomization
+# =========================
+# Deploy all: kubectl apply -k k8s/
+# Delete all: kubectl delete -k k8s/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: vectorflow
+
+# ==================
+# Core Resources
+# ==================
+resources:
+  # Namespace and configuration
+  - namespace.yaml
+  - configmap.yaml
+
+  # Gateway service (Go)
+  - gateway/deployment.yaml
+  - gateway/service.yaml
+
+  # Worker service (Rust)
+  - worker/deployment.yaml
+  - worker/service.yaml
+
+  # Inference service (Python)
+  - inference/deployment.yaml
+  - inference/service.yaml
+
+  # Frontend (Next.js)
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+
+  # Networking
+  - ingress.yaml
+  - network-policy.yaml
+
+  # Secrets (template - apply separately with actual values)
+  # - secrets.yaml
+
+# ==================
+# Common Labels
+# ==================
+commonLabels:
+  app: vectorflow
+  managed-by: kustomize
+  environment: production
+
+# ==================
+# Image Tags
+# ==================
+# Override image tags for different environments
+images:
+  - name: vectorflow-gateway
+    newTag: latest
+  - name: vectorflow-worker
+    newTag: latest
+  - name: vectorflow-inference
+    newTag: latest
+  - name: vectorflow-frontend
+    newTag: latest
+
+# ==================
+# Config Generation
+# ==================
+# Uncomment to generate ConfigMaps from files
+# configMapGenerator:
+#   - name: vectorflow-nginx-config
+#     files:
+#       - nginx.conf
+
+# ==================
+# Patches
+# ==================
+# Apply environment-specific patches
+# patches:
+#   - path: patches/replica-count.yaml
+#     target:
+#       kind: Deployment
+
+# ==================
+# Replicas Override
+# ==================
+# Quick replica count adjustments
+# replicas:
+#   - name: vectorflow-gateway
+#     count: 3
+#   - name: vectorflow-worker
+#     count: 5

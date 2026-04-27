@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vectorflow-inference
+  namespace: vectorflow
+  labels:
+    app: vectorflow
+    component: inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vectorflow
+      component: inference
+  template:
+    metadata:
+      labels:
+        app: vectorflow
+        component: inference
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: inference
+          image: vectorflow-inference:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: vectorflow-config
+            - secretRef:
+                name: vectorflow-secrets
+                optional: true
+          env:
+            - name: INFERENCE_HOST
+              value: "0.0.0.0"
+            - name: PYTHON_INFERENCE_PORT
+              value: "8082"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/models
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 5Gi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
