@@ -1,0 +1,157 @@
+# =========================
+# VectorFlow Docker Compose
+# =========================
+# Local development environment
+
+services:
+  # ----- Go Gateway -----
+  gateway:
+    build:
+      context: ./go
+      dockerfile: Dockerfile
+    container_name: vectorflow-gateway
+    ports:
+      - "${GO_GATEWAY_PORT:-8080}:8080"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - WORKER_SERVICE_URL=http://worker:8081
+      - INFERENCE_SERVICE_URL=http://inference:8082
+    depends_on:
+      worker:
+        condition: service_healthy
+      inference:
+        condition: service_healthy
+    networks:
+      - vectorflow-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----- Rust Worker -----
+  worker:
+    build:
+      context: ./rust
+      dockerfile: Dockerfile
+    container_name: vectorflow-worker
+    ports:
+      - "${RUST_WORKER_PORT:-8081}:8081"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - RUST_LOG=debug
+    networks:
+      - vectorflow-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----- Python Inference -----
+  inference:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: vectorflow-inference
+    ports:
+      - "${PYTHON_INFERENCE_PORT:-8082}:8082"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MODEL_NAME=${MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
+      - MODEL_CACHE_DIR=/app/models
+      - PINECONE_API_KEY=${PINECONE_API_KEY:-}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT:-us-east-1}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-vectorflow-index}
+    volumes:
+      - model-cache:/app/models
+    networks:
+      - vectorflow-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # ----- Next.js Frontend -----
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vectorflow-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:${GO_GATEWAY_PORT:-8080}
+    depends_on:
+      - gateway
+    networks:
+      - vectorflow-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----- Prometheus (Monitoring) -----
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vectorflow-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - vectorflow-net
+    profiles:
+      - monitoring
+
+  # ----- Grafana (Dashboards) -----
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vectorflow-grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - vectorflow-net
+    profiles:
+      - monitoring
+
+networks:
+  vectorflow-net:
+    driver: bridge
+
+volumes:
+  model-cache:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
