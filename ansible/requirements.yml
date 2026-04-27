@@ -1,0 +1,33 @@
+# =========================
+# VectorFlow Ansible Requirements
+# =========================
+# Install with: ansible-galaxy install -r requirements.yml
+
+---
+collections:
+  # Kubernetes support
+  - name: kubernetes.core
+    version: ">=2.4.0"
+
+  # Community modules
+  - name: community.general
+    version: ">=7.0.0"
+
+  # POSIX modules (sysctl, etc.)
+  - name: ansible.posix
+    version: ">=1.5.0"
+
+  # Docker support
+  - name: community.docker
+    version: ">=3.4.0"
+
+roles:
+  # Geerlingguy's excellent roles
+  - name: geerlingguy.docker
+    version: "6.1.0"
+
+  - name: geerlingguy.pip
+    version: "2.2.0"
+
+  - name: geerlingguy.security
+    version: "2.1.0"

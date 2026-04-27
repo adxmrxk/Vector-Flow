@@ -1,0 +1,435 @@
+# =========================
+# VectorFlow - Application Deployment
+# =========================
+# Deploys all VectorFlow services to Kubernetes
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-vectorflow.yml
+#   ansible-playbook playbooks/deploy-vectorflow.yml --tags "gateway"
+#   ansible-playbook playbooks/deploy-vectorflow.yml -e "image_tag=v1.2.0"
+
+---
+- name: Deploy VectorFlow to Kubernetes
+  hosts: localhost
+  connection: local
+  become: false
+
+  vars:
+    k8s_namespace: vectorflow
+    project_root: "{{ playbook_dir | dirname | dirname }}"
+    k8s_manifests_dir: "{{ project_root }}/k8s"
+
+  pre_tasks:
+    - name: Verify kubectl is configured
+      ansible.builtin.command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+      failed_when: cluster_info.rc != 0
+
+    - name: Display deployment info
+      ansible.builtin.debug:
+        msg: |
+          Deploying VectorFlow
+          Namespace: {{ k8s_namespace }}
+          Registry: {{ docker_registry }}
+          Image Tag: {{ image_tag }}
+
+  tasks:
+    # ----- Namespace -----
+    - name: Create namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              environment: "{{ environment }}"
+      tags:
+        - namespace
+        - always
+
+    # ----- ConfigMaps -----
+    - name: Create common ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: vectorflow-config
+            namespace: "{{ k8s_namespace }}"
+          data:
+            ENVIRONMENT: "{{ environment }}"
+            LOG_LEVEL: "{{ log_level }}"
+            WORKER_SERVICE_URL: "http://vectorflow-worker:{{ ports.worker }}"
+            INFERENCE_SERVICE_URL: "http://vectorflow-inference:{{ ports.inference }}"
+      tags:
+        - config
+        - always
+
+    # ----- Gateway Deployment -----
+    - name: Deploy Go Gateway
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vectorflow-gateway
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: gateway
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: vectorflow
+                component: gateway
+            template:
+              metadata:
+                labels:
+                  app: vectorflow
+                  component: gateway
+              spec:
+                containers:
+                  - name: gateway
+                    image: "{{ images.gateway }}"
+                    ports:
+                      - containerPort: "{{ ports.gateway }}"
+                    envFrom:
+                      - configMapRef:
+                          name: vectorflow-config
+                    resources:
+                      requests:
+                        cpu: "{{ resources.gateway.cpu }}"
+                        memory: "{{ resources.gateway.memory }}"
+                      limits:
+                        cpu: "{{ resources.gateway.cpu }}"
+                        memory: "{{ resources.gateway.memory }}"
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: "{{ ports.gateway }}"
+                      initialDelaySeconds: 10
+                      periodSeconds: 10
+                    readinessProbe:
+                      httpGet:
+                        path: /ready
+                        port: "{{ ports.gateway }}"
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+      tags:
+        - gateway
+        - deploy
+
+    - name: Create Gateway Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vectorflow-gateway
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: gateway
+          spec:
+            type: LoadBalancer
+            ports:
+              - port: "{{ ports.gateway }}"
+                targetPort: "{{ ports.gateway }}"
+                protocol: TCP
+            selector:
+              app: vectorflow
+              component: gateway
+      tags:
+        - gateway
+        - service
+
+    # ----- Worker Deployment -----
+    - name: Deploy Rust Worker
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vectorflow-worker
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: worker
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: vectorflow
+                component: worker
+            template:
+              metadata:
+                labels:
+                  app: vectorflow
+                  component: worker
+              spec:
+                containers:
+                  - name: worker
+                    image: "{{ images.worker }}"
+                    ports:
+                      - containerPort: "{{ ports.worker }}"
+                    envFrom:
+                      - configMapRef:
+                          name: vectorflow-config
+                    resources:
+                      requests:
+                        cpu: "{{ resources.worker.cpu }}"
+                        memory: "{{ resources.worker.memory }}"
+                      limits:
+                        cpu: "{{ resources.worker.cpu }}"
+                        memory: "{{ resources.worker.memory }}"
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: "{{ ports.worker }}"
+                      initialDelaySeconds: 10
+                      periodSeconds: 10
+      tags:
+        - worker
+        - deploy
+
+    - name: Create Worker Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vectorflow-worker
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: worker
+          spec:
+            type: ClusterIP
+            ports:
+              - port: "{{ ports.worker }}"
+                targetPort: "{{ ports.worker }}"
+                protocol: TCP
+            selector:
+              app: vectorflow
+              component: worker
+      tags:
+        - worker
+        - service
+
+    # ----- Inference Deployment -----
+    - name: Deploy Python Inference
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vectorflow-inference
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: inference
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: vectorflow
+                component: inference
+            template:
+              metadata:
+                labels:
+                  app: vectorflow
+                  component: inference
+              spec:
+                containers:
+                  - name: inference
+                    image: "{{ images.inference }}"
+                    ports:
+                      - containerPort: "{{ ports.inference }}"
+                    envFrom:
+                      - configMapRef:
+                          name: vectorflow-config
+                    resources:
+                      requests:
+                        cpu: "{{ resources.inference.cpu }}"
+                        memory: "{{ resources.inference.memory }}"
+                      limits:
+                        cpu: "{{ resources.inference.cpu }}"
+                        memory: "{{ resources.inference.memory }}"
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: "{{ ports.inference }}"
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                    volumeMounts:
+                      - name: model-cache
+                        mountPath: /app/models
+                volumes:
+                  - name: model-cache
+                    emptyDir:
+                      sizeLimit: 5Gi
+      tags:
+        - inference
+        - deploy
+
+    - name: Create Inference Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vectorflow-inference
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: inference
+          spec:
+            type: ClusterIP
+            ports:
+              - port: "{{ ports.inference }}"
+                targetPort: "{{ ports.inference }}"
+                protocol: TCP
+            selector:
+              app: vectorflow
+              component: inference
+      tags:
+        - inference
+        - service
+
+    # ----- Frontend Deployment -----
+    - name: Deploy Next.js Frontend
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vectorflow-frontend
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: frontend
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: vectorflow
+                component: frontend
+            template:
+              metadata:
+                labels:
+                  app: vectorflow
+                  component: frontend
+              spec:
+                containers:
+                  - name: frontend
+                    image: "{{ images.frontend }}"
+                    ports:
+                      - containerPort: "{{ ports.frontend }}"
+                    env:
+                      - name: NEXT_PUBLIC_API_URL
+                        value: "http://vectorflow-gateway:{{ ports.gateway }}"
+                    resources:
+                      requests:
+                        cpu: "{{ resources.frontend.cpu }}"
+                        memory: "{{ resources.frontend.memory }}"
+                      limits:
+                        cpu: "{{ resources.frontend.cpu }}"
+                        memory: "{{ resources.frontend.memory }}"
+      tags:
+        - frontend
+        - deploy
+
+    - name: Create Frontend Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vectorflow-frontend
+            namespace: "{{ k8s_namespace }}"
+            labels:
+              app: vectorflow
+              component: frontend
+          spec:
+            type: LoadBalancer
+            ports:
+              - port: 80
+                targetPort: "{{ ports.frontend }}"
+                protocol: TCP
+            selector:
+              app: vectorflow
+              component: frontend
+      tags:
+        - frontend
+        - service
+
+    # ----- Horizontal Pod Autoscaler -----
+    - name: Create HPA for Gateway
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata:
+            name: vectorflow-gateway-hpa
+            namespace: "{{ k8s_namespace }}"
+          spec:
+            scaleTargetRef:
+              apiVersion: apps/v1
+              kind: Deployment
+              name: vectorflow-gateway
+            minReplicas: 2
+            maxReplicas: 10
+            metrics:
+              - type: Resource
+                resource:
+                  name: cpu
+                  target:
+                    type: Utilization
+                    averageUtilization: 70
+      tags:
+        - hpa
+        - autoscaling
+
+  post_tasks:
+    - name: Wait for deployments to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ k8s_namespace }}"
+      register: deployments
+      until: >
+        deployments.resources | selectattr('status.readyReplicas', 'defined') |
+        selectattr('status.readyReplicas', 'gt', 0) | list | length ==
+        deployments.resources | length
+      retries: 30
+      delay: 10
+      tags:
+        - verify
+
+    - name: Display deployment status
+      ansible.builtin.command: "kubectl get all -n {{ k8s_namespace }}"
+      register: k8s_status
+      changed_when: false
+      tags:
+        - verify
+
+    - name: Show status
+      ansible.builtin.debug:
+        var: k8s_status.stdout_lines
+      tags:
+        - verify

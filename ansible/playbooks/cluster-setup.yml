@@ -1,0 +1,304 @@
+# =========================
+# VectorFlow - Kubernetes Cluster Setup
+# =========================
+# Provisions a complete Kubernetes cluster from scratch
+#
+# Usage:
+#   ansible-playbook playbooks/cluster-setup.yml
+#   ansible-playbook playbooks/cluster-setup.yml --tags "prereqs"
+#   ansible-playbook playbooks/cluster-setup.yml -l control_plane
+
+---
+- name: Prepare all Kubernetes nodes
+  hosts: kubernetes
+  become: true
+  tags:
+    - prereqs
+    - always
+
+  pre_tasks:
+    - name: Validate inventory
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | length > 0
+          - groups['workers'] | length > 0
+        fail_msg: "Inventory must have at least one control plane and one worker"
+        success_msg: "Inventory validated"
+
+  tasks:
+    # ----- System Updates -----
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: safe
+      when: environment != 'production'
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - nfs-common
+          - jq
+        state: present
+
+    # ----- Disable Swap -----
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      changed_when: true
+      when: disable_swap
+
+    - name: Remove swap from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '\sswap\s'
+        state: absent
+      when: disable_swap
+
+    # ----- Kernel Modules -----
+    - name: Load required kernel modules
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ required_kernel_modules }}"
+
+    - name: Persist kernel modules
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/kubernetes.conf
+        content: |
+          {% for module in required_kernel_modules %}
+          {{ module }}
+          {% endfor %}
+        mode: '0644'
+
+    # ----- Sysctl Settings -----
+    - name: Set sysctl parameters
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+        reload: true
+      loop: "{{ sysctl_params | dict2items }}"
+
+    # ----- Timezone -----
+    - name: Set timezone
+      community.general.timezone:
+        name: "{{ timezone }}"
+
+# ----- Install Container Runtime -----
+- name: Install containerd
+  hosts: kubernetes
+  become: true
+  tags:
+    - containerd
+    - runtime
+
+  tasks:
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install containerd
+      ansible.builtin.apt:
+        name: "{{ containerd_packages }}"
+        state: present
+        update_cache: true
+
+    - name: Create containerd config directory
+      ansible.builtin.file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Generate default containerd config
+      ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Configure containerd to use systemd cgroup
+      ansible.builtin.lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        line: '            SystemdCgroup = true'
+      notify: Restart containerd
+
+    - name: Enable and start containerd
+      ansible.builtin.systemd:
+        name: containerd
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+
+# ----- Install Kubernetes Components -----
+- name: Install Kubernetes packages
+  hosts: kubernetes
+  become: true
+  tags:
+    - kubernetes
+    - packages
+
+  tasks:
+    - name: Add Kubernetes GPG key
+      ansible.builtin.apt_key:
+        url: "{{ kubernetes_apt_key_url }}"
+        state: present
+
+    - name: Add Kubernetes repository
+      ansible.builtin.apt_repository:
+        repo: "deb {{ kubernetes_apt_repo }} /"
+        state: present
+        filename: kubernetes
+
+    - name: Install Kubernetes packages
+      ansible.builtin.apt:
+        name: "{{ kubernetes_packages }}"
+        state: present
+        update_cache: true
+
+    - name: Hold Kubernetes packages
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: "{{ kubernetes_packages }}"
+
+    - name: Enable kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        enabled: true
+
+# ----- Initialize Control Plane -----
+- name: Initialize Kubernetes control plane
+  hosts: control_plane
+  become: true
+  tags:
+    - control-plane
+    - init
+
+  tasks:
+    - name: Check if cluster is already initialized
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_init
+
+    - name: Initialize the cluster
+      ansible.builtin.command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --apiserver-advertise-address={{ ansible_host }}
+      register: kubeadm_init_output
+      when: not kubeadm_init.stat.exists
+
+    - name: Create .kube directory for root
+      ansible.builtin.file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to root's kube config
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: true
+        mode: '0600'
+
+    - name: Create .kube directory for ansible user
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy admin.conf to user's kube config
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+
+    # ----- Install CNI Plugin -----
+    - name: Install Flannel CNI
+      ansible.builtin.command: >
+        kubectl apply -f https://github.com/flannel-io/flannel/releases/download/{{ flannel_version }}/kube-flannel.yml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      when: cni_plugin == 'flannel'
+      changed_when: true
+
+    # ----- Generate Join Command -----
+    - name: Generate join command
+      ansible.builtin.command: kubeadm token create --print-join-command
+      register: join_command
+      changed_when: false
+
+    - name: Save join command
+      ansible.builtin.set_fact:
+        kubeadm_join_command: "{{ join_command.stdout }}"
+
+# ----- Join Worker Nodes -----
+- name: Join worker nodes to cluster
+  hosts: workers
+  become: true
+  tags:
+    - workers
+    - join
+
+  tasks:
+    - name: Check if node is already joined
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Join worker to cluster
+      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['kubeadm_join_command'] }}"
+      when: not kubelet_conf.stat.exists
+
+# ----- Verify Cluster -----
+- name: Verify cluster health
+  hosts: control_plane
+  become: true
+  tags:
+    - verify
+
+  tasks:
+    - name: Wait for all nodes to be ready
+      ansible.builtin.command: kubectl get nodes
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nodes_status
+      until: "'NotReady' not in nodes_status.stdout"
+      retries: 30
+      delay: 10
+
+    - name: Display cluster status
+      ansible.builtin.debug:
+        var: nodes_status.stdout_lines
+
+    - name: Create vectorflow namespace
+      ansible.builtin.command: kubectl create namespace vectorflow --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      changed_when: true

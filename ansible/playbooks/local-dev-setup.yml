@@ -1,0 +1,176 @@
+# =========================
+# VectorFlow - Local Development Setup
+# =========================
+# Sets up local Kubernetes development environment using Minikube
+#
+# Usage:
+#   ansible-playbook playbooks/local-dev-setup.yml
+#   ansible-playbook playbooks/local-dev-setup.yml --tags "minikube"
+
+---
+- name: Setup Local Development Environment
+  hosts: localhost
+  connection: local
+  become: false
+
+  vars:
+    minikube_driver: docker
+    minikube_cpus: 4
+    minikube_memory: 8192
+    minikube_disk_size: "40g"
+    minikube_kubernetes_version: "v1.29.0"
+    project_root: "{{ playbook_dir | dirname | dirname }}"
+
+  pre_tasks:
+    - name: Display environment info
+      ansible.builtin.debug:
+        msg: |
+          Setting up local development environment
+          Project root: {{ project_root }}
+          Minikube driver: {{ minikube_driver }}
+          CPUs: {{ minikube_cpus }}
+          Memory: {{ minikube_memory }}MB
+
+  tasks:
+    # ----- Verify Prerequisites -----
+    - name: Check for Docker
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: docker_check.rc != 0
+
+    - name: Check for Minikube
+      ansible.builtin.command: minikube version
+      register: minikube_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check for kubectl
+      ansible.builtin.command: kubectl version --client
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display tool versions
+      ansible.builtin.debug:
+        msg: |
+          Docker: {{ docker_check.stdout | default('Not found') }}
+          Minikube: {{ minikube_check.stdout | default('Not found') }}
+          kubectl: {{ kubectl_check.stdout | default('Not found') }}
+
+    # ----- Minikube Setup -----
+    - name: Check Minikube status
+      ansible.builtin.command: minikube status
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      tags:
+        - minikube
+
+    - name: Start Minikube cluster
+      ansible.builtin.command: >
+        minikube start
+        --driver={{ minikube_driver }}
+        --cpus={{ minikube_cpus }}
+        --memory={{ minikube_memory }}
+        --disk-size={{ minikube_disk_size }}
+        --kubernetes-version={{ minikube_kubernetes_version }}
+        --addons=ingress,metrics-server,dashboard
+      when: "'Running' not in minikube_status.stdout"
+      tags:
+        - minikube
+
+    - name: Enable Minikube addons
+      ansible.builtin.command: "minikube addons enable {{ item }}"
+      loop:
+        - ingress
+        - metrics-server
+        - dashboard
+        - storage-provisioner
+      changed_when: true
+      tags:
+        - minikube
+        - addons
+
+    # ----- Configure kubectl -----
+    - name: Get Minikube kubectl context
+      ansible.builtin.command: minikube kubectl -- config current-context
+      register: kubectl_context
+      changed_when: false
+      tags:
+        - kubectl
+
+    - name: Display kubectl context
+      ansible.builtin.debug:
+        msg: "kubectl context: {{ kubectl_context.stdout }}"
+      tags:
+        - kubectl
+
+    # ----- Create Namespace -----
+    - name: Create vectorflow namespace
+      ansible.builtin.command: >
+        minikube kubectl -- create namespace vectorflow --dry-run=client -o yaml | minikube kubectl -- apply -f -
+      changed_when: true
+      tags:
+        - namespace
+
+    # ----- Local Docker Registry -----
+    - name: Enable Minikube registry addon
+      ansible.builtin.command: minikube addons enable registry
+      changed_when: true
+      tags:
+        - registry
+
+    - name: Get registry info
+      ansible.builtin.debug:
+        msg: |
+          Local registry available at: localhost:5000
+          To push images: docker tag <image> localhost:5000/<image> && docker push localhost:5000/<image>
+      tags:
+        - registry
+
+    # ----- Environment File -----
+    - name: Update .env with Minikube settings
+      ansible.builtin.blockinfile:
+        path: "{{ project_root }}/.env"
+        create: true
+        marker: "# {mark} ANSIBLE MANAGED - MINIKUBE"
+        block: |
+          # Minikube Configuration (auto-generated)
+          K8S_CONTEXT=minikube
+          K8S_NAMESPACE=vectorflow
+          DOCKER_REGISTRY=localhost:5000
+      tags:
+        - env
+
+    # ----- Useful Commands -----
+    - name: Display useful commands
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Local Development Environment Ready!
+          ========================================
+
+          Useful commands:
+            minikube status          - Check cluster status
+            minikube dashboard       - Open K8s dashboard
+            minikube tunnel          - Enable LoadBalancer access
+            minikube service list    - List services and URLs
+            minikube stop            - Stop cluster (preserves data)
+            minikube delete          - Delete cluster completely
+
+          kubectl shortcuts:
+            kubectl get pods -n vectorflow
+            kubectl logs -f <pod> -n vectorflow
+            kubectl port-forward svc/<service> 8080:8080 -n vectorflow
+
+          Docker registry:
+            Push: docker tag myimage localhost:5000/myimage && docker push localhost:5000/myimage
+            Pull: docker pull localhost:5000/myimage
+
+          Next steps:
+            1. Build Docker images: make docker-build
+            2. Deploy to Minikube: make k8s-deploy
+            3. Open dashboard: minikube dashboard
+      tags:
+        - always

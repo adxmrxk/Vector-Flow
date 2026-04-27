@@ -1,0 +1,57 @@
+# =========================
+# VectorFlow Ansible Inventory
+# =========================
+# Copy to hosts.yml and update with your actual values
+# NEVER commit hosts.yml to version control!
+
+all:
+  vars:
+    # Global variables
+    ansible_python_interpreter: /usr/bin/python3
+    environment: development
+
+  children:
+    # ----- Kubernetes Control Plane -----
+    control_plane:
+      hosts:
+        control-1:
+          ansible_host: 192.168.1.10  # Update with your IP
+          ansible_user: ubuntu
+          # For AWS EC2:
+          # ansible_host: ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+      vars:
+        node_role: control-plane
+
+    # ----- Kubernetes Worker Nodes -----
+    workers:
+      hosts:
+        worker-1:
+          ansible_host: 192.168.1.11
+          ansible_user: ubuntu
+        worker-2:
+          ansible_host: 192.168.1.12
+          ansible_user: ubuntu
+      vars:
+        node_role: worker
+
+    # ----- All Kubernetes Nodes -----
+    kubernetes:
+      children:
+        control_plane:
+        workers:
+      vars:
+        kubernetes_version: "1.29"
+        container_runtime: containerd
+        pod_network_cidr: "10.244.0.0/16"
+
+    # ----- Local Development (Minikube/Kind) -----
+    local:
+      hosts:
+        localhost:
+          ansible_connection: local
+          ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      vars:
+        local_dev: true
+        minikube_driver: docker
+        minikube_cpus: 4
+        minikube_memory: 8192

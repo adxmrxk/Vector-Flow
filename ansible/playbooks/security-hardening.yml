@@ -1,0 +1,224 @@
+# =========================
+# VectorFlow - Security Hardening
+# =========================
+# Applies security best practices to all servers
+#
+# Usage:
+#   ansible-playbook playbooks/security-hardening.yml
+#   ansible-playbook playbooks/security-hardening.yml --tags "ssh"
+
+---
+- name: Apply Security Hardening
+  hosts: kubernetes
+  become: true
+
+  vars:
+    ssh_port: 22
+    fail2ban_enabled: true
+    unattended_upgrades: true
+
+  tasks:
+    # ----- SSH Hardening -----
+    - name: Configure SSH security
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+        validate: 'sshd -t -f %s'
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+        - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+        - { regexp: '^#?PermitEmptyPasswords', line: 'PermitEmptyPasswords no' }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 3' }
+        - { regexp: '^#?ClientAliveInterval', line: 'ClientAliveInterval 300' }
+        - { regexp: '^#?ClientAliveCountMax', line: 'ClientAliveCountMax 2' }
+      notify: Restart SSH
+      tags:
+        - ssh
+
+    # ----- Firewall (UFW) -----
+    - name: Install UFW
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+      tags:
+        - firewall
+
+    - name: Set UFW default policies
+      community.general.ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: incoming, policy: deny }
+        - { direction: outgoing, policy: allow }
+      tags:
+        - firewall
+
+    - name: Allow SSH through firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+      tags:
+        - firewall
+
+    - name: Allow Kubernetes ports (control plane)
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ k8s_control_plane_ports }}"
+      when: "'control_plane' in group_names"
+      tags:
+        - firewall
+
+    - name: Allow Kubernetes ports (workers)
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ k8s_worker_ports | map('string') | list }}"
+      when: "'workers' in group_names"
+      tags:
+        - firewall
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+      tags:
+        - firewall
+
+    # ----- Fail2Ban -----
+    - name: Install fail2ban
+      ansible.builtin.apt:
+        name: fail2ban
+        state: present
+      when: fail2ban_enabled
+      tags:
+        - fail2ban
+
+    - name: Configure fail2ban for SSH
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [DEFAULT]
+          bantime = 3600
+          findtime = 600
+          maxretry = 3
+
+          [sshd]
+          enabled = true
+          port = {{ ssh_port }}
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 3
+          bantime = 3600
+        mode: '0644'
+      notify: Restart fail2ban
+      when: fail2ban_enabled
+      tags:
+        - fail2ban
+
+    - name: Enable fail2ban service
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+      when: fail2ban_enabled
+      tags:
+        - fail2ban
+
+    # ----- Automatic Security Updates -----
+    - name: Install unattended-upgrades
+      ansible.builtin.apt:
+        name:
+          - unattended-upgrades
+          - apt-listchanges
+        state: present
+      when: unattended_upgrades
+      tags:
+        - updates
+
+    - name: Configure unattended-upgrades
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+        mode: '0644'
+      when: unattended_upgrades
+      tags:
+        - updates
+
+    # ----- Kernel Hardening -----
+    - name: Apply kernel security parameters
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/99-security.conf
+        reload: true
+      loop:
+        - { name: 'kernel.randomize_va_space', value: '2' }
+        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+        - { name: 'net.ipv4.conf.default.rp_filter', value: '1' }
+        - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
+        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv6.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.all.log_martians', value: '1' }
+      tags:
+        - kernel
+
+    # ----- User Security -----
+    - name: Ensure password quality requirements
+      ansible.builtin.apt:
+        name: libpam-pwquality
+        state: present
+      tags:
+        - users
+
+    - name: Set password aging policies
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^PASS_MAX_DAYS', line: 'PASS_MAX_DAYS 90' }
+        - { regexp: '^PASS_MIN_DAYS', line: 'PASS_MIN_DAYS 1' }
+        - { regexp: '^PASS_WARN_AGE', line: 'PASS_WARN_AGE 7' }
+      tags:
+        - users
+
+    # ----- Audit Logging -----
+    - name: Install auditd
+      ansible.builtin.apt:
+        name:
+          - auditd
+          - audispd-plugins
+        state: present
+      tags:
+        - audit
+
+    - name: Enable auditd service
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: true
+        state: started
+      tags:
+        - audit
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted
+
+    - name: Restart fail2ban
+      ansible.builtin.systemd:
+        name: fail2ban
+        state: restarted

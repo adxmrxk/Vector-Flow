@@ -1,0 +1,71 @@
+# =========================
+# VectorFlow - Kubernetes Group Variables
+# =========================
+# Variables for all Kubernetes nodes
+
+# ----- Kubernetes Version -----
+kubernetes_version: "1.29"
+kubernetes_apt_key_url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+kubernetes_apt_repo: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/"
+
+# ----- Container Runtime -----
+container_runtime: containerd
+containerd_version: "1.7.*"
+
+# ----- Networking -----
+pod_network_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+cluster_dns: "10.96.0.10"
+
+# CNI plugin (flannel, calico, weave)
+cni_plugin: flannel
+flannel_version: "v0.24.0"
+
+# ----- Cluster Configuration -----
+cluster_name: vectorflow-cluster
+control_plane_endpoint: "{{ hostvars[groups['control_plane'][0]]['ansible_host'] }}:6443"
+
+# ----- Kubelet Configuration -----
+kubelet_config:
+  cgroupDriver: systemd
+  containerRuntimeEndpoint: "unix:///run/containerd/containerd.sock"
+  evictionHard:
+    memory.available: "100Mi"
+    nodefs.available: "10%"
+    nodefs.inodesFree: "5%"
+  maxPods: 110
+
+# ----- System Requirements -----
+required_kernel_modules:
+  - overlay
+  - br_netfilter
+
+sysctl_params:
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1
+
+# ----- Packages -----
+kubernetes_packages:
+  - kubelet
+  - kubeadm
+  - kubectl
+
+containerd_packages:
+  - containerd.io
+
+# ----- Swap -----
+disable_swap: true
+
+# ----- Firewall Ports -----
+k8s_control_plane_ports:
+  - 6443   # Kubernetes API server
+  - 2379   # etcd client
+  - 2380   # etcd peer
+  - 10250  # Kubelet API
+  - 10259  # kube-scheduler
+  - 10257  # kube-controller-manager
+
+k8s_worker_ports:
+  - 10250  # Kubelet API
+  - 30000-32767  # NodePort Services

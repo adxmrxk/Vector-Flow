@@ -1,0 +1,73 @@
+# =========================
+# VectorFlow - Global Variables
+# =========================
+# Variables that apply to all hosts
+
+# ----- Project Info -----
+project_name: vectorflow
+project_domain: vectorflow.local
+
+# ----- Environment -----
+environment: "{{ lookup('env', 'ENVIRONMENT') | default('development', true) }}"
+
+# ----- Docker Registry -----
+docker_registry: "{{ lookup('env', 'DOCKER_REGISTRY') | default('localhost:5000', true) }}"
+image_tag: "{{ lookup('env', 'IMAGE_TAG') | default('latest', true) }}"
+
+# ----- Service Images -----
+images:
+  gateway: "{{ docker_registry }}/vectorflow-gateway:{{ image_tag }}"
+  worker: "{{ docker_registry }}/vectorflow-worker:{{ image_tag }}"
+  inference: "{{ docker_registry }}/vectorflow-inference:{{ image_tag }}"
+  frontend: "{{ docker_registry }}/vectorflow-frontend:{{ image_tag }}"
+
+# ----- Service Ports -----
+ports:
+  gateway: 8080
+  worker: 8081
+  inference: 8082
+  frontend: 3000
+  prometheus: 9090
+  grafana: 3001
+
+# ----- Resource Limits -----
+resources:
+  gateway:
+    cpu: "500m"
+    memory: "512Mi"
+  worker:
+    cpu: "1000m"
+    memory: "1Gi"
+  inference:
+    cpu: "2000m"
+    memory: "4Gi"
+  frontend:
+    cpu: "200m"
+    memory: "256Mi"
+
+# ----- Security Settings -----
+security:
+  # SSH configuration
+  ssh_port: 22
+  disable_root_login: true
+  password_auth: false
+
+  # Firewall rules
+  firewall_enabled: true
+  allowed_ports:
+    - 22    # SSH
+    - 80    # HTTP
+    - 443   # HTTPS
+    - 6443  # Kubernetes API
+    - 10250 # Kubelet API
+
+# ----- Timezone -----
+timezone: UTC
+
+# ----- Package Management -----
+apt_update_cache: true
+apt_cache_valid_time: 3600
+
+# ----- Logging -----
+log_level: info
+log_retention_days: 30
