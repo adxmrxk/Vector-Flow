@@ -1,0 +1,24 @@
+# =========================
+# VectorFlow Development Dependencies
+# =========================
+
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+
+# Type Checking
+mypy>=1.8.0
+
+# Linting & Formatting
+ruff>=0.1.0
+black>=24.1.0
+
+# Pre-commit Hooks
+pre-commit>=3.6.0
+
+# Debugging
+ipython>=8.0.0
+rich>=13.0.0

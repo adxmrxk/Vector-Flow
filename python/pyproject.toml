@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectorflow-inference"
+version = "0.1.0"
+description = "VectorFlow ML Inference Service - Semantic Search Engine"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "VectorFlow Team"}
+]
+keywords = ["ml", "inference", "semantic-search", "embeddings", "transformers"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "sentence-transformers>=2.3.0",
+    "torch>=2.1.0",
+    "numpy>=1.26.0",
+    "pinecone-client>=3.0.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.26.0",
+    "prometheus-client>=0.19.0",
+    "structlog>=24.1.0",
+    "tenacity>=8.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "mypy>=1.8.0",
+    "ruff>=0.1.0",
+    "black>=24.1.0",
+    "pre-commit>=3.6.0",
+]
+
+[project.scripts]
+vectorflow-inference = "app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "services*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.isort]
+known-first-party = ["app", "services"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --cov=app --cov=services --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["app", "services"]
+omit = ["*/tests/*", "*/__pycache__/*"]
