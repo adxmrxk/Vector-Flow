@@ -1,0 +1,23 @@
+# =================================
+# VectorFlow Chef Dependencies
+# =================================
+# Manage cookbook dependencies with Berkshelf
+#
+# Usage:
+#   berks install
+#   berks upload
+#   berks vendor ./vendor/cookbooks
+
+source 'https://supermarket.chef.io'
+
+# Local cookbooks
+cookbook 'vectorflow_base', path: './cookbooks/vectorflow_base'
+cookbook 'vectorflow_docker', path: './cookbooks/vectorflow_docker'
+cookbook 'vectorflow_kubernetes', path: './cookbooks/vectorflow_kubernetes'
+cookbook 'vectorflow_security', path: './cookbooks/vectorflow_security'
+cookbook 'vectorflow_app', path: './cookbooks/vectorflow_app'
+
+# External dependencies
+cookbook 'apt', '~> 7.0'
+cookbook 'yum', '~> 7.0'
+cookbook 'ntp', '~> 5.0'

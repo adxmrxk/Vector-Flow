@@ -1,0 +1,73 @@
+# =================================
+# VectorFlow Chef Ignore File
+# =================================
+# Files and directories to ignore when uploading cookbooks
+
+# OS generated files
+.DS_Store
+Icon?
+nohup.out
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*~
+*.swp
+*.swo
+\#*
+.\#*
+*#
+.idea
+.vscode
+
+# Version control
+.git
+.gitignore
+.gitmodules
+.gitconfig
+.svn
+*/.bzr/*
+*/.hg/*
+*/.svn/*
+
+# Berkshelf
+Berksfile
+Berksfile.lock
+cookbooks/**/Berksfile.lock
+
+# Test Kitchen
+.kitchen/
+.kitchen.local.yml
+kitchen.yml
+kitchen.local.yml
+
+# ChefSpec
+spec/*
+test/
+
+# Vagrant
+.vagrant
+Vagrantfile
+
+# Policyfile
+Policyfile.rb
+Policyfile.lock.json
+policies/
+
+# Documentation
+README*
+CHANGELOG*
+LICENSE*
+*.md
+
+# Build artifacts
+vendor/
+tmp/
+reports/
+coverage/
+
+# Local configuration
+.chef/
+knife.rb
+config.rb
+*.pem

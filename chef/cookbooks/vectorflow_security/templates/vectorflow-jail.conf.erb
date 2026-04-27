@@ -1,0 +1,22 @@
+# =================================
+# VectorFlow Custom Fail2ban Jails
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+
+[vectorflow-gateway]
+enabled = true
+port = 8080
+filter = vectorflow-gateway
+logpath = /var/log/vectorflow/gateway.log
+maxretry = 10
+bantime = 600
+findtime = 300
+
+[vectorflow-api]
+enabled = true
+port = 8080,8081,8082
+filter = vectorflow-api
+logpath = /var/log/vectorflow/*.log
+maxretry = 20
+bantime = 300
+findtime = 60

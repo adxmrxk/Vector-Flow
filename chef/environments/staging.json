@@ -1,0 +1,38 @@
+{
+  "name": "staging",
+  "description": "Staging environment for VectorFlow",
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "cookbook_versions": {
+    "vectorflow_base": "= 1.0.0",
+    "vectorflow_docker": "= 1.0.0",
+    "vectorflow_kubernetes": "= 1.0.0",
+    "vectorflow_security": "= 1.0.0",
+    "vectorflow_app": "= 1.0.0"
+  },
+  "default_attributes": {
+    "vectorflow": {
+      "app": {
+        "version": "staging",
+        "logging": {
+          "level": "info"
+        },
+        "services": {
+          "gateway": { "replicas": 2 },
+          "worker": { "replicas": 2 },
+          "inference": { "replicas": 2 },
+          "frontend": { "replicas": 2 }
+        }
+      },
+      "security": {
+        "firewall": { "enabled": true },
+        "fail2ban": { "enabled": true },
+        "auto_updates": { "enabled": true, "security_only": true }
+      },
+      "kubernetes": {
+        "node_type": "worker"
+      }
+    }
+  },
+  "override_attributes": {}
+}

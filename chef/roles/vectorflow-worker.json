@@ -1,0 +1,21 @@
+{
+  "name": "vectorflow-worker",
+  "description": "VectorFlow worker node with Docker and Kubernetes",
+  "json_class": "Chef::Role",
+  "default_attributes": {
+    "vectorflow": {
+      "kubernetes": {
+        "node_type": "worker"
+      }
+    }
+  },
+  "override_attributes": {},
+  "chef_type": "role",
+  "run_list": [
+    "role[vectorflow-server]",
+    "recipe[vectorflow_docker::default]",
+    "recipe[vectorflow_kubernetes::default]",
+    "recipe[vectorflow_app::default]"
+  ],
+  "env_run_lists": {}
+}

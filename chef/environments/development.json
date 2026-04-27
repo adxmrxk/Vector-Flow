@@ -1,0 +1,32 @@
+{
+  "name": "development",
+  "description": "Development environment for VectorFlow",
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "cookbook_versions": {},
+  "default_attributes": {
+    "vectorflow": {
+      "app": {
+        "version": "latest",
+        "logging": {
+          "level": "debug"
+        },
+        "services": {
+          "gateway": { "replicas": 1 },
+          "worker": { "replicas": 1 },
+          "inference": { "replicas": 1 },
+          "frontend": { "replicas": 1 }
+        }
+      },
+      "security": {
+        "firewall": { "enabled": false },
+        "fail2ban": { "enabled": false },
+        "auto_updates": { "enabled": false }
+      },
+      "kubernetes": {
+        "node_type": "standalone"
+      }
+    }
+  },
+  "override_attributes": {}
+}

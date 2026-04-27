@@ -1,0 +1,10 @@
+{
+  "id": "vectorflow",
+  "comment": "VectorFlow Service Account",
+  "uid": 1000,
+  "gid": "vectorflow",
+  "home": "/home/vectorflow",
+  "shell": "/bin/bash",
+  "groups": ["vectorflow", "docker"],
+  "ssh_keys": []
+}

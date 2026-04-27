@@ -1,0 +1,32 @@
+# =================================
+# VectorFlow Configuration
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+environment: production
+
+services:
+<% @services.each do |name, config| -%>
+  <%= name %>:
+    enabled: <%= config['enabled'] %>
+    port: <%= config['port'] %>
+    replicas: <%= config['replicas'] %>
+<% end -%>
+
+model:
+  name: <%= @model['name'] %>
+  cache_dir: <%= @model['cache_dir'] %>
+  batch_size: <%= @model['batch_size'] %>
+  max_sequence_length: <%= @model['max_sequence_length'] %>
+
+pinecone:
+  environment: <%= @pinecone['environment'] %>
+  index_name: <%= @pinecone['index_name'] %>
+
+logging:
+  level: <%= @logging['level'] %>
+  format: <%= @logging['format'] %>
+  output: <%= @logging['output'] %>

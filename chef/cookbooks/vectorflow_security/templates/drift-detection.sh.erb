@@ -1,0 +1,136 @@
+#!/bin/bash
+# =================================
+# VectorFlow Drift Detection
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+#
+# Detects configuration drift from expected state
+# and alerts/remediates as needed
+
+set -e
+
+CONFIG_DIR="<%= @config_dir %>"
+LOG_DIR="<%= @log_dir %>"
+DRIFT_LOG="${LOG_DIR}/compliance/drift.log"
+ALERT_FILE="${LOG_DIR}/compliance/drift-alerts.txt"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$DRIFT_LOG"
+}
+
+alert() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] DRIFT DETECTED: $1" >> "$ALERT_FILE"
+    log "DRIFT DETECTED: $1"
+}
+
+log "Starting drift detection scan..."
+
+DRIFT_COUNT=0
+
+# ==================
+# Check SSH Configuration
+# ==================
+check_ssh_config() {
+    local expected_values=(
+        "PermitRootLogin no"
+        "PasswordAuthentication no"
+        "X11Forwarding no"
+    )
+
+    for expected in "${expected_values[@]}"; do
+        key=$(echo "$expected" | cut -d' ' -f1)
+        if ! grep -q "^$expected" /etc/ssh/sshd_config 2>/dev/null; then
+            alert "SSH config drift: Expected '$expected'"
+            ((DRIFT_COUNT++))
+        fi
+    done
+}
+
+# ==================
+# Check File Permissions
+# ==================
+check_permissions() {
+    declare -A expected_perms=(
+        ["/etc/passwd"]="644"
+        ["/etc/shadow"]="640"
+        ["/etc/ssh/sshd_config"]="600"
+        ["/etc/docker/daemon.json"]="644"
+        ["$CONFIG_DIR"]="750"
+    )
+
+    for file in "${!expected_perms[@]}"; do
+        if [ -e "$file" ]; then
+            actual=$(stat -c %a "$file" 2>/dev/null)
+            expected="${expected_perms[$file]}"
+            if [ "$actual" != "$expected" ]; then
+                alert "Permission drift on $file: expected $expected, got $actual"
+                ((DRIFT_COUNT++))
+            fi
+        fi
+    done
+}
+
+# ==================
+# Check Required Services
+# ==================
+check_services() {
+    local required_services=(
+        "docker"
+        "fail2ban"
+        "ssh"
+    )
+
+    for service in "${required_services[@]}"; do
+        if ! systemctl is-active --quiet "$service" 2>/dev/null; then
+            alert "Service drift: $service is not running"
+            ((DRIFT_COUNT++))
+        fi
+    done
+}
+
+# ==================
+# Check Firewall Rules
+# ==================
+check_firewall() {
+    if ! ufw status 2>/dev/null | grep -q "Status: active"; then
+        alert "Firewall drift: UFW is not active"
+        ((DRIFT_COUNT++))
+    fi
+}
+
+# ==================
+# Check System Settings
+# ==================
+check_sysctl() {
+    declare -A expected_sysctl=(
+        ["vm.swappiness"]="10"
+        ["net.ipv4.ip_forward"]="1"
+    )
+
+    for setting in "${!expected_sysctl[@]}"; do
+        actual=$(sysctl -n "$setting" 2>/dev/null)
+        expected="${expected_sysctl[$setting]}"
+        if [ "$actual" != "$expected" ]; then
+            alert "Sysctl drift: $setting expected $expected, got $actual"
+            ((DRIFT_COUNT++))
+        fi
+    done
+}
+
+# Run all checks
+check_ssh_config
+check_permissions
+check_services
+check_firewall
+check_sysctl
+
+# Summary
+if [ $DRIFT_COUNT -eq 0 ]; then
+    log "Drift detection complete: No drift detected"
+else
+    log "Drift detection complete: $DRIFT_COUNT drift(s) detected"
+    # Optionally trigger Chef run to remediate
+    # chef-client
+fi
+
+exit 0

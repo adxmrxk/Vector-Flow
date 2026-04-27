@@ -1,0 +1,36 @@
+# =================================
+# VectorFlow Fail2ban Configuration
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+[DEFAULT]
+# Ban settings
+bantime = <%= @bantime %>
+findtime = <%= @findtime %>
+maxretry = <%= @maxretry %>
+
+# Actions
+banaction = ufw
+banaction_allports = ufw
+
+# Ignore localhost
+ignoreip = 127.0.0.1/8 ::1
+
+# Backend
+backend = systemd
+
+# Email settings (optional)
+# destemail = admin@vectorflow.local
+# sender = fail2ban@vectorflow.local
+# mta = sendmail
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 3600

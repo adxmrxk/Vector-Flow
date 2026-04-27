@@ -1,0 +1,41 @@
+{
+  "name": "vectorflow-standalone",
+  "description": "Standalone VectorFlow development environment with Minikube",
+  "json_class": "Chef::Role",
+  "default_attributes": {
+    "vectorflow": {
+      "kubernetes": {
+        "node_type": "standalone",
+        "minikube": {
+          "cpus": 4,
+          "memory": "8192"
+        }
+      },
+      "security": {
+        "firewall": {
+          "enabled": false
+        },
+        "fail2ban": {
+          "enabled": false
+        }
+      },
+      "app": {
+        "services": {
+          "gateway": { "replicas": 1 },
+          "worker": { "replicas": 1 },
+          "inference": { "replicas": 1 },
+          "frontend": { "replicas": 1 }
+        }
+      }
+    }
+  },
+  "override_attributes": {},
+  "chef_type": "role",
+  "run_list": [
+    "role[vectorflow-server]",
+    "recipe[vectorflow_docker::default]",
+    "recipe[vectorflow_kubernetes::default]",
+    "recipe[vectorflow_app::default]"
+  ],
+  "env_run_lists": {}
+}

@@ -1,0 +1,80 @@
+# =================================
+# VectorFlow Audit Rules
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+# CIS Benchmark compliant audit rules
+
+# Delete all existing rules
+-D
+
+# Set buffer size
+-b 8192
+
+# Make the configuration immutable (remove to modify rules)
+# -e 2
+
+# ==================
+# System Events
+# ==================
+
+# Monitor date/time changes
+-a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
+-a always,exit -F arch=b64 -S clock_settime -k time-change
+-w /etc/localtime -p wa -k time-change
+
+# Monitor user/group changes
+-w /etc/group -p wa -k identity
+-w /etc/passwd -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+
+# Monitor network configuration
+-w /etc/hosts -p wa -k system-network
+-w /etc/network -p wa -k system-network
+-w /etc/sysconfig/network -p wa -k system-network
+
+# Monitor system administrators
+-w /etc/sudoers -p wa -k scope
+-w /etc/sudoers.d/ -p wa -k scope
+
+# ==================
+# Access Control
+# ==================
+
+# Monitor privilege escalation
+-a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k privileged
+
+# Monitor failed access attempts
+-a always,exit -F arch=b64 -S open -S truncate -S ftruncate -F exit=-EACCES -k access
+-a always,exit -F arch=b64 -S open -S truncate -S ftruncate -F exit=-EPERM -k access
+
+# ==================
+# VectorFlow Specific
+# ==================
+
+# Monitor VectorFlow configuration directory
+-w /etc/vectorflow/ -p wa -k vectorflow-config
+
+# Monitor VectorFlow application directory
+-w /opt/vectorflow/ -p wa -k vectorflow-app
+
+# Monitor VectorFlow logs (for tampering)
+-w /var/log/vectorflow/ -p wa -k vectorflow-logs
+
+# Monitor Docker daemon
+-w /etc/docker/ -p wa -k docker-config
+-w /var/lib/docker/ -p wa -k docker-data
+
+# Monitor Kubernetes configuration
+-w /etc/kubernetes/ -p wa -k kubernetes-config
+-w /var/lib/kubelet/ -p wa -k kubernetes-data
+
+# ==================
+# Execution Monitoring
+# ==================
+
+# Monitor execution of privileged commands
+-a always,exit -F path=/usr/bin/docker -F perm=x -k docker-exec
+-a always,exit -F path=/usr/bin/kubectl -F perm=x -k kubectl-exec
+-a always,exit -F path=/usr/local/bin/minikube -F perm=x -k minikube-exec

@@ -1,0 +1,55 @@
+#!/bin/bash
+# =================================
+# VectorFlow Health Check
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+
+set -e
+
+TIMEOUT=<%= @health_check['timeout'] %>
+RETRIES=<%= @health_check['retries'] %>
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+check_service() {
+    local name=$1
+    local url=$2
+    local attempt=1
+
+    while [ $attempt -le $RETRIES ]; do
+        if curl -sf --max-time $TIMEOUT "$url" > /dev/null 2>&1; then
+            log "OK: $name is healthy"
+            return 0
+        fi
+        log "WARN: $name check failed (attempt $attempt/$RETRIES)"
+        ((attempt++))
+        sleep 2
+    done
+
+    log "FAIL: $name is unhealthy"
+    return 1
+}
+
+log "Starting health checks..."
+
+FAILED=0
+
+<% @services.each do |name, config| -%>
+<% if config['enabled'] -%>
+# Check <%= name %>
+if ! check_service "<%= name %>" "http://localhost:<%= config['port'] %>/health"; then
+    ((FAILED++))
+fi
+
+<% end -%>
+<% end -%>
+
+if [ $FAILED -gt 0 ]; then
+    log "Health check completed with $FAILED failure(s)"
+    exit 1
+fi
+
+log "All health checks passed"
+exit 0

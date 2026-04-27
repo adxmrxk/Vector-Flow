@@ -1,0 +1,133 @@
+#!/bin/bash
+# =================================
+# VectorFlow Compliance Check
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+#
+# Performs security compliance checks based on CIS benchmarks
+# and reports any violations
+
+set -e
+
+LOG_DIR="<%= @log_dir %>/compliance"
+REPORT_FILE="${LOG_DIR}/compliance-report-$(date +%Y%m%d-%H%M%S).txt"
+
+echo "========================================" | tee "$REPORT_FILE"
+echo "VectorFlow Compliance Check Report" | tee -a "$REPORT_FILE"
+echo "Date: $(date)" | tee -a "$REPORT_FILE"
+echo "Hostname: $(hostname)" | tee -a "$REPORT_FILE"
+echo "========================================" | tee -a "$REPORT_FILE"
+
+PASSED=0
+FAILED=0
+WARNINGS=0
+
+check_pass() {
+    echo "[PASS] $1" | tee -a "$REPORT_FILE"
+    ((PASSED++))
+}
+
+check_fail() {
+    echo "[FAIL] $1" | tee -a "$REPORT_FILE"
+    ((FAILED++))
+}
+
+check_warn() {
+    echo "[WARN] $1" | tee -a "$REPORT_FILE"
+    ((WARNINGS++))
+}
+
+echo "" | tee -a "$REPORT_FILE"
+echo "=== SSH Configuration ===" | tee -a "$REPORT_FILE"
+
+# Check SSH root login disabled
+if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config 2>/dev/null; then
+    check_pass "Root login is disabled"
+else
+    check_fail "Root login is enabled or not configured"
+fi
+
+# Check SSH password authentication disabled
+if grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config 2>/dev/null; then
+    check_pass "Password authentication is disabled"
+else
+    check_warn "Password authentication may be enabled"
+fi
+
+# Check SSH protocol version
+if grep -q "^Protocol 2" /etc/ssh/sshd_config 2>/dev/null || ! grep -q "Protocol" /etc/ssh/sshd_config 2>/dev/null; then
+    check_pass "SSH Protocol 2 is used"
+else
+    check_fail "SSH Protocol 1 may be enabled"
+fi
+
+echo "" | tee -a "$REPORT_FILE"
+echo "=== Firewall Configuration ===" | tee -a "$REPORT_FILE"
+
+# Check UFW status
+if ufw status 2>/dev/null | grep -q "Status: active"; then
+    check_pass "UFW firewall is active"
+else
+    check_fail "UFW firewall is not active"
+fi
+
+echo "" | tee -a "$REPORT_FILE"
+echo "=== File Permissions ===" | tee -a "$REPORT_FILE"
+
+# Check /etc/passwd permissions
+PASSWD_PERMS=$(stat -c %a /etc/passwd 2>/dev/null)
+if [ "$PASSWD_PERMS" = "644" ]; then
+    check_pass "/etc/passwd has correct permissions (644)"
+else
+    check_fail "/etc/passwd has incorrect permissions ($PASSWD_PERMS)"
+fi
+
+# Check /etc/shadow permissions
+SHADOW_PERMS=$(stat -c %a /etc/shadow 2>/dev/null)
+if [ "$SHADOW_PERMS" = "640" ] || [ "$SHADOW_PERMS" = "600" ]; then
+    check_pass "/etc/shadow has correct permissions ($SHADOW_PERMS)"
+else
+    check_fail "/etc/shadow has incorrect permissions ($SHADOW_PERMS)"
+fi
+
+echo "" | tee -a "$REPORT_FILE"
+echo "=== Service Status ===" | tee -a "$REPORT_FILE"
+
+# Check fail2ban
+if systemctl is-active --quiet fail2ban 2>/dev/null; then
+    check_pass "fail2ban is running"
+else
+    check_warn "fail2ban is not running"
+fi
+
+# Check auditd
+if systemctl is-active --quiet auditd 2>/dev/null; then
+    check_pass "auditd is running"
+else
+    check_warn "auditd is not running"
+fi
+
+echo "" | tee -a "$REPORT_FILE"
+echo "=== Docker Security ===" | tee -a "$REPORT_FILE"
+
+# Check Docker daemon.json exists
+if [ -f /etc/docker/daemon.json ]; then
+    check_pass "Docker daemon.json exists"
+else
+    check_warn "Docker daemon.json not found"
+fi
+
+echo "" | tee -a "$REPORT_FILE"
+echo "========================================" | tee -a "$REPORT_FILE"
+echo "Summary:" | tee -a "$REPORT_FILE"
+echo "  Passed:   $PASSED" | tee -a "$REPORT_FILE"
+echo "  Failed:   $FAILED" | tee -a "$REPORT_FILE"
+echo "  Warnings: $WARNINGS" | tee -a "$REPORT_FILE"
+echo "========================================" | tee -a "$REPORT_FILE"
+
+# Exit with failure if any checks failed
+if [ $FAILED -gt 0 ]; then
+    exit 1
+fi
+
+exit 0

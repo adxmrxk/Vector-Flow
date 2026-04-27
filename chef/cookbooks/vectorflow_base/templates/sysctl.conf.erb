@@ -1,0 +1,12 @@
+# =================================
+# VectorFlow Sysctl Configuration
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+# Any manual changes will be overwritten
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+<% @sysctl_settings.each do |key, value| -%>
+<%= key %> = <%= value %>
+<% end -%>

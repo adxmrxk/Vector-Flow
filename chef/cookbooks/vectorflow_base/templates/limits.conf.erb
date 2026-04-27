@@ -1,0 +1,20 @@
+# =================================
+# VectorFlow Resource Limits
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+# Any manual changes will be overwritten
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+# Limits for vectorflow user
+<% @limits.each do |limit_type, values| -%>
+<%= @user %>    soft    <%= limit_type %>    <%= values['soft'] %>
+<%= @user %>    hard    <%= limit_type %>    <%= values['hard'] %>
+<% end -%>
+
+# Limits for root (required for systemd services)
+<% @limits.each do |limit_type, values| -%>
+root    soft    <%= limit_type %>    <%= values['soft'] %>
+root    hard    <%= limit_type %>    <%= values['hard'] %>
+<% end -%>

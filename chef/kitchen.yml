@@ -1,0 +1,89 @@
+# =================================
+# VectorFlow Test Kitchen Configuration
+# =================================
+# Integration testing for Chef cookbooks
+#
+# Usage:
+#   kitchen list
+#   kitchen converge
+#   kitchen verify
+#   kitchen destroy
+#   kitchen test
+
+driver:
+  name: docker
+  privileged: true
+  use_sudo: false
+
+provisioner:
+  name: chef_zero
+  always_update_cookbooks: true
+  product_name: chef
+  product_version: 18
+
+verifier:
+  name: inspec
+
+platforms:
+  - name: ubuntu-22.04
+    driver_config:
+      image: ubuntu:22.04
+      platform: ubuntu
+      run_command: /lib/systemd/systemd
+      cap_add:
+        - SYS_ADMIN
+      volume:
+        - /sys/fs/cgroup:/sys/fs/cgroup:ro
+  - name: ubuntu-20.04
+    driver_config:
+      image: ubuntu:20.04
+      platform: ubuntu
+
+suites:
+  - name: base
+    run_list:
+      - recipe[vectorflow_base::default]
+    verifier:
+      inspec_tests:
+        - test/integration/base
+    attributes:
+
+  - name: docker
+    run_list:
+      - recipe[vectorflow_base::default]
+      - recipe[vectorflow_docker::default]
+    verifier:
+      inspec_tests:
+        - test/integration/docker
+    attributes:
+
+  - name: security
+    run_list:
+      - recipe[vectorflow_base::default]
+      - recipe[vectorflow_security::default]
+    verifier:
+      inspec_tests:
+        - test/integration/security
+    attributes:
+      vectorflow:
+        security:
+          firewall:
+            enabled: false
+
+  - name: full-stack
+    run_list:
+      - recipe[vectorflow_base::default]
+      - recipe[vectorflow_docker::default]
+      - recipe[vectorflow_kubernetes::default]
+      - recipe[vectorflow_security::default]
+      - recipe[vectorflow_app::default]
+    verifier:
+      inspec_tests:
+        - test/integration/full-stack
+    attributes:
+      vectorflow:
+        kubernetes:
+          node_type: standalone
+        security:
+          firewall:
+            enabled: false

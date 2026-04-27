@@ -1,0 +1,51 @@
+#!/bin/bash
+# =================================
+# VectorFlow Status
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+
+echo "========================================"
+echo "VectorFlow System Status"
+echo "Date: $(date)"
+echo "========================================"
+
+echo ""
+echo "=== Kubernetes Status ==="
+if kubectl cluster-info > /dev/null 2>&1; then
+    echo "Cluster: Connected"
+    echo ""
+    echo "Pods in vectorflow namespace:"
+    kubectl get pods -n vectorflow -o wide 2>/dev/null || echo "  Unable to get pods"
+    echo ""
+    echo "Services:"
+    kubectl get svc -n vectorflow 2>/dev/null || echo "  Unable to get services"
+else
+    echo "Cluster: Not connected"
+fi
+
+echo ""
+echo "=== Docker Status ==="
+if docker info > /dev/null 2>&1; then
+    echo "Docker: Running"
+    echo "Containers:"
+    docker ps --filter "name=vectorflow" --format "  {{.Names}}: {{.Status}}" 2>/dev/null || echo "  No VectorFlow containers"
+else
+    echo "Docker: Not running"
+fi
+
+echo ""
+echo "=== Resource Usage ==="
+echo "Memory:"
+free -h | grep -E "^Mem:" | awk '{print "  Total: " $2 ", Used: " $3 ", Free: " $4}'
+echo "Disk:"
+df -h / | tail -1 | awk '{print "  Total: " $2 ", Used: " $3 " (" $5 "), Free: " $4}'
+
+echo ""
+echo "=== Recent Logs ==="
+if [ -f /var/log/vectorflow/gateway.log ]; then
+    echo "Last 5 gateway log entries:"
+    tail -5 /var/log/vectorflow/gateway.log 2>/dev/null | sed 's/^/  /'
+fi
+
+echo ""
+echo "========================================"

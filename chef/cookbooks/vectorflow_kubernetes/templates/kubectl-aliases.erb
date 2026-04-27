@@ -1,0 +1,55 @@
+# =================================
+# kubectl Aliases for VectorFlow
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+
+# Basic kubectl shortcuts
+alias k='kubectl'
+alias kg='kubectl get'
+alias kd='kubectl describe'
+alias kl='kubectl logs'
+alias ke='kubectl exec -it'
+alias ka='kubectl apply -f'
+alias kdel='kubectl delete'
+
+# Namespace shortcuts
+alias kn='kubectl config set-context --current --namespace'
+alias kgn='kubectl get namespaces'
+
+# Pod shortcuts
+alias kgp='kubectl get pods'
+alias kgpw='kubectl get pods -o wide'
+alias kgpa='kubectl get pods --all-namespaces'
+alias kdp='kubectl describe pod'
+alias klp='kubectl logs -f'
+
+# Deployment shortcuts
+alias kgd='kubectl get deployments'
+alias kdd='kubectl describe deployment'
+alias ksd='kubectl scale deployment'
+alias krd='kubectl rollout status deployment'
+
+# Service shortcuts
+alias kgs='kubectl get services'
+alias kds='kubectl describe service'
+
+# ConfigMap and Secret shortcuts
+alias kgcm='kubectl get configmaps'
+alias kgs='kubectl get secrets'
+
+# VectorFlow specific
+alias kvf='kubectl -n vectorflow'
+alias kvfg='kubectl -n vectorflow get'
+alias kvfd='kubectl -n vectorflow describe'
+alias kvfl='kubectl -n vectorflow logs'
+
+# Get all VectorFlow resources
+alias kvfall='kubectl -n vectorflow get all'
+
+# Quick port-forward commands
+alias kvf-gateway='kubectl -n vectorflow port-forward svc/vectorflow-gateway 8080:8080'
+alias kvf-frontend='kubectl -n vectorflow port-forward svc/vectorflow-frontend 3000:80'
+
+# Watch commands
+alias kwatch='kubectl get pods -w'
+alias kvfwatch='kubectl -n vectorflow get pods -w'

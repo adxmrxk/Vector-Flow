@@ -1,0 +1,84 @@
+# =================================
+# VectorFlow SSH Configuration
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+# CIS Benchmark compliant configuration
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+# Network
+Port <%= @ssh_config['port'] %>
+AddressFamily inet
+ListenAddress 0.0.0.0
+
+# Protocol
+Protocol 2
+
+# Host Keys
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+
+# Logging
+SyslogFacility AUTH
+LogLevel VERBOSE
+
+# Authentication
+LoginGraceTime 60
+PermitRootLogin <%= @ssh_config['permit_root_login'] %>
+StrictModes yes
+MaxAuthTries <%= @ssh_config['max_auth_tries'] %>
+MaxSessions 10
+
+PubkeyAuthentication <%= @ssh_config['pubkey_authentication'] %>
+AuthorizedKeysFile .ssh/authorized_keys
+
+HostbasedAuthentication no
+IgnoreRhosts yes
+
+PasswordAuthentication <%= @ssh_config['password_authentication'] %>
+PermitEmptyPasswords no
+
+ChallengeResponseAuthentication no
+
+# Kerberos options
+KerberosAuthentication no
+
+# GSSAPI options
+GSSAPIAuthentication no
+
+UsePAM yes
+
+# Session
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding <%= @ssh_config['x11_forwarding'] %>
+PrintMotd no
+PrintLastLog yes
+TCPKeepAlive yes
+PermitUserEnvironment no
+Compression delayed
+ClientAliveInterval <%= @ssh_config['client_alive_interval'] %>
+ClientAliveCountMax <%= @ssh_config['client_alive_count_max'] %>
+UseDNS no
+PermitTunnel no
+
+# Restrict users
+<% if @ssh_config['allow_users'].any? -%>
+AllowUsers <%= @ssh_config['allow_users'].join(' ') %>
+<% end -%>
+<% if @ssh_config['allow_groups'].any? -%>
+AllowGroups <%= @ssh_config['allow_groups'].join(' ') %>
+<% end -%>
+
+# SFTP
+Subsystem sftp /usr/lib/openssh/sftp-server -f AUTHPRIV -l INFO
+
+# Banner
+Banner /etc/issue.net

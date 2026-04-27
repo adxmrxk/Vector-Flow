@@ -1,0 +1,29 @@
+# =================================
+# Docker Service Override
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+#
+# Generated: <%= Time.now.utc.iso8601 %>
+# =================================
+
+[Service]
+# Clear existing ExecStart
+ExecStart=
+
+# Start Docker with custom options
+ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+
+# Increase file descriptor limits
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+
+# Set task limits
+TasksMax=infinity
+
+# Delegate cgroup management
+Delegate=yes
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5s

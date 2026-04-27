@@ -1,0 +1,51 @@
+{
+  "name": "production",
+  "description": "Production environment for VectorFlow",
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "cookbook_versions": {
+    "vectorflow_base": "= 1.0.0",
+    "vectorflow_docker": "= 1.0.0",
+    "vectorflow_kubernetes": "= 1.0.0",
+    "vectorflow_security": "= 1.0.0",
+    "vectorflow_app": "= 1.0.0"
+  },
+  "default_attributes": {
+    "vectorflow": {
+      "app": {
+        "version": "stable",
+        "logging": {
+          "level": "warn"
+        },
+        "services": {
+          "gateway": { "replicas": 3 },
+          "worker": { "replicas": 5 },
+          "inference": { "replicas": 3 },
+          "frontend": { "replicas": 3 }
+        }
+      },
+      "security": {
+        "firewall": { "enabled": true },
+        "fail2ban": {
+          "enabled": true,
+          "bantime": "24h",
+          "maxretry": 3
+        },
+        "auditd": { "enabled": true },
+        "auto_updates": {
+          "enabled": true,
+          "security_only": true,
+          "reboot_if_needed": false
+        },
+        "compliance": {
+          "cis_benchmark": true,
+          "check_interval": "daily"
+        }
+      },
+      "kubernetes": {
+        "node_type": "worker"
+      }
+    }
+  },
+  "override_attributes": {}
+}

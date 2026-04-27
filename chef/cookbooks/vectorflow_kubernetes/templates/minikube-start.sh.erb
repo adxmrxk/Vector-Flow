@@ -1,0 +1,63 @@
+#!/bin/bash
+# =================================
+# VectorFlow Minikube Start Script
+# =================================
+# Managed by Chef - DO NOT EDIT MANUALLY
+
+set -e
+
+USER="<%= @vectorflow_user %>"
+DRIVER="<%= @minikube_config['driver'] %>"
+CPUS="<%= @minikube_config['cpus'] %>"
+MEMORY="<%= @minikube_config['memory'] %>"
+DISK_SIZE="<%= @minikube_config['disk_size'] %>"
+K8S_VERSION="<%= @minikube_config['kubernetes_version'] %>"
+ADDONS="<%= @minikube_config['addons'].join(' ') %>"
+
+echo "Starting VectorFlow Minikube cluster..."
+
+# Check if running as correct user
+if [ "$EUID" -eq 0 ]; then
+    echo "Please run as ${USER}, not root"
+    exit 1
+fi
+
+# Start Minikube if not running
+if ! minikube status > /dev/null 2>&1; then
+    echo "Starting Minikube with configuration:"
+    echo "  Driver: ${DRIVER}"
+    echo "  CPUs: ${CPUS}"
+    echo "  Memory: ${MEMORY}MB"
+    echo "  Disk: ${DISK_SIZE}"
+    echo "  K8s Version: ${K8S_VERSION}"
+
+    minikube start \
+        --driver="${DRIVER}" \
+        --cpus="${CPUS}" \
+        --memory="${MEMORY}" \
+        --disk-size="${DISK_SIZE}" \
+        --kubernetes-version="${K8S_VERSION}"
+else
+    echo "Minikube is already running"
+fi
+
+# Enable addons
+echo "Enabling addons: ${ADDONS}"
+for addon in ${ADDONS}; do
+    minikube addons enable "${addon}"
+done
+
+# Create vectorflow namespace if it doesn't exist
+kubectl create namespace vectorflow --dry-run=client -o yaml | kubectl apply -f -
+
+# Set default context to vectorflow namespace
+kubectl config set-context --current --namespace=vectorflow
+
+echo ""
+echo "VectorFlow Minikube cluster is ready!"
+echo ""
+echo "Useful commands:"
+echo "  minikube dashboard    - Open Kubernetes dashboard"
+echo "  minikube tunnel       - Expose LoadBalancer services"
+echo "  kubectl get pods      - List pods in vectorflow namespace"
+echo ""
