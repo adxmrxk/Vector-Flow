@@ -8,10 +8,12 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
 from prometheus_client import Counter, Histogram, generate_latest
 
 from app import __version__
 from app.config import Settings, get_settings
+from app.telemetry import init_telemetry, instrument_fastapi, shutdown_telemetry
 from app.models import (
     BatchUpsertRequest,
     EmbeddingRequest,
@@ -48,14 +50,21 @@ EMBEDDING_COUNT = Counter(
 # ----- Service Instances -----
 embedding_service: EmbeddingService | None = None
 vector_store: VectorStoreService | None = None
+tracer_provider = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
-    global embedding_service, vector_store
+    global embedding_service, vector_store, tracer_provider
 
     settings = get_settings()
+
+    # Initialize OpenTelemetry tracing
+    tracer_provider = init_telemetry(
+        service_name="vectorflow-inference",
+        service_version=__version__,
+    )
 
     # Startup
     logger.info(
@@ -82,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Shutting down VectorFlow Inference Service")
+    shutdown_telemetry(tracer_provider)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -104,6 +114,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if not settings.is_production else None,
         lifespan=lifespan,
     )
+
+    # ----- OpenTelemetry Instrumentation -----
+    instrument_fastapi(app)
 
     # ----- CORS Middleware -----
     app.add_middleware(

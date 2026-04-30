@@ -14,7 +14,11 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-reqwest = { version = "0.11", features = ["json"] }
+tracing-opentelemetry = "0.22"
+opentelemetry = "0.21"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14", features = ["http-proto", "reqwest-client"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 anyhow = "1.0"
 thiserror = "1.0"
 config = "0.14"

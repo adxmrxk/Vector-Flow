@@ -1,0 +1,32 @@
+#!/bin/bash
+# VectorFlow CLI wrapper
+# Usage: ./scripts/vf <command> [args...]
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+CLI_DIR="$PROJECT_ROOT/cli"
+
+if command -v vectorflow &> /dev/null; then
+    exec vectorflow "$@"
+fi
+
+VENV_DIR="$CLI_DIR/.venv"
+if [ -d "$VENV_DIR" ]; then
+    source "$VENV_DIR/bin/activate" 2>/dev/null || source "$VENV_DIR/Scripts/activate" 2>/dev/null
+    exec python -m vectorflow_cli.main "$@"
+fi
+
+if [ -f "$CLI_DIR/vectorflow_cli/main.py" ]; then
+    cd "$CLI_DIR"
+    if ! python -c "import click, httpx, rich" 2>/dev/null; then
+        echo "Installing CLI dependencies..."
+        pip install click httpx rich pydantic python-dotenv --quiet
+    fi
+    exec python -m vectorflow_cli.main "$@"
+fi
+
+echo "Error: VectorFlow CLI not found"
+echo "Run: cd cli && pip install -e ."
+exit 1

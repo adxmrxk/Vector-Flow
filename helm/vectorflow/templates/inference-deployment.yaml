@@ -1,0 +1,101 @@
+{{- if .Values.inference.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vectorflow.inference.fullname" . }}
+  labels:
+    {{- include "vectorflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference
+spec:
+  {{- if not .Values.inference.autoscaling.enabled }}
+  replicas: {{ .Values.inference.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vectorflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inference
+  template:
+    metadata:
+      labels:
+        {{- include "vectorflow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: inference
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vectorflow.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: inference
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.inference.image.repository }}:{{ .Values.inference.image.tag }}"
+          imagePullPolicy: {{ .Values.inference.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8082
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment | quote }}
+            - name: PINECONE_ENVIRONMENT
+              value: {{ .Values.pinecone.environment | quote }}
+            - name: PINECONE_INDEX_NAME
+              value: {{ .Values.pinecone.indexName | quote }}
+            {{- if .Values.pinecone.apiKeySecret }}
+            - name: PINECONE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.pinecone.apiKeySecret }}
+                  key: {{ .Values.pinecone.apiKeySecretKey }}
+            {{- end }}
+            {{- if .Values.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "vectorflow-inference"
+            {{- end }}
+            {{- range $key, $value := .Values.inference.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.inference.persistence.enabled }}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/models
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.inference.resources | nindent 12 }}
+      {{- if .Values.inference.persistence.enabled }}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: {{ include "vectorflow.inference.fullname" . }}-pvc
+      {{- end }}
+      {{- with .Values.inference.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.inference.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.inference.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

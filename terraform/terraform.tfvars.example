@@ -1,0 +1,49 @@
+# =========================
+# VectorFlow Terraform Variables
+# =========================
+# Copy this file to terraform.tfvars and customize
+# NEVER commit terraform.tfvars to version control!
+
+# ----- Environment -----
+environment = "development"
+aws_region  = "us-east-1"
+
+# ----- VPC -----
+vpc_cidr           = "10.0.0.0/16"
+enable_nat_gateway = false  # Set true if you need private subnet internet access (costs ~$32/month)
+single_nat_gateway = true   # Cost optimization if NAT is enabled
+
+# ----- EKS Nodes -----
+# For $0 budget, use minimal configuration
+node_instance_types = ["t3.medium"]  # t3.micro for absolute minimum
+node_min_size       = 1
+node_max_size       = 3
+node_desired_size   = 1              # Start with 1 for cost savings
+use_spot_instances  = true           # 60-90% savings, but can be interrupted
+
+# ----- Inference Nodes -----
+# Set to 0 for development (saves money)
+inference_instance_types = ["t3.large"]
+inference_max_size       = 2
+inference_desired_size   = 0         # Set to 1+ when you need ML inference
+
+# ----- Security -----
+# Restrict in production!
+allowed_cidr_blocks = ["0.0.0.0/0"]
+
+# Add your IAM roles for cluster access
+# aws_auth_roles = [
+#   {
+#     rolearn  = "arn:aws:iam::123456789012:role/Admin"
+#     username = "admin"
+#     groups   = ["system:masters"]
+#   }
+# ]
+
+# ----- Cost Protection -----
+create_billing_alarm    = true
+billing_alarm_threshold = 0.01       # Alert at $0.01
+# billing_alarm_sns_topic = "arn:aws:sns:us-east-1:123456789012:billing-alerts"
+
+# ----- Optional -----
+create_artifacts_bucket = false      # Set true if you need S3 storage

@@ -9,10 +9,14 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use opentelemetry::global;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{info, Level};
+use tracing::{info, instrument, Level};
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 // ----- Configuration -----
@@ -22,6 +26,8 @@ struct AppConfig {
     host: String,
     port: u16,
     environment: String,
+    otel_endpoint: Option<String>,
+    otel_enabled: bool,
 }
 
 impl Default for AppConfig {
@@ -33,6 +39,10 @@ impl Default for AppConfig {
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8081),
             environment: std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
+            otel_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+            otel_enabled: std::env::var("OTEL_TRACES_ENABLED")
+                .map(|v| v != "false")
+                .unwrap_or(true),
         }
     }
 }
@@ -96,6 +106,7 @@ struct ErrorResponse {
 
 // ----- Handlers -----
 
+#[instrument(skip(state))]
 async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy".to_string(),
@@ -105,11 +116,13 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     })
 }
 
+#[instrument]
 async fn ready() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ready"}))
 }
 
 /// Re-rank search results using a simple scoring adjustment
+#[instrument(skip(_state, req), fields(query = %req.query, results_count = req.results.len()))]
 async fn rerank(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<RerankRequest>,
@@ -118,7 +131,8 @@ async fn rerank(
     let top_k = req.top_k.unwrap_or(10);
 
     // Simple re-ranking: boost scores based on query term overlap
-    let query_terms: Vec<&str> = req.query.to_lowercase().split_whitespace().collect();
+    let query_lower = req.query.to_lowercase();
+    let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
     let mut results = req.results;
     for result in &mut results {
@@ -146,6 +160,7 @@ async fn rerank(
 }
 
 /// Calculate cosine similarity between two vectors
+#[instrument(skip(req), fields(vector_dim = req.vector_a.len()))]
 async fn cosine_similarity(
     Json(req): Json<SimilarityRequest>,
 ) -> Result<Json<SimilarityResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -175,17 +190,57 @@ async fn cosine_similarity(
     }))
 }
 
+// ----- Telemetry -----
+
+fn init_tracer(config: &AppConfig) -> Option<sdktrace::TracerProvider> {
+    if !config.otel_enabled {
+        info!("OpenTelemetry tracing disabled");
+        return None;
+    }
+
+    let endpoint = config.otel_endpoint.as_ref()?;
+
+    let exporter = opentelemetry_otlp::new_exporter()
+        .http()
+        .with_endpoint(endpoint);
+
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(exporter)
+        .with_trace_config(
+            sdktrace::config().with_resource(Resource::new(vec![
+                opentelemetry::KeyValue::new("service.name", "vectorflow-worker"),
+                opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            ])),
+        )
+        .install_batch(runtime::Tokio)
+        .ok()?;
+
+    info!("OpenTelemetry tracing initialized with endpoint: {}", endpoint);
+    Some(tracer)
+}
+
 // ----- Main -----
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_target(false))
-        .with(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
-        .init();
-
     let config = AppConfig::default();
+
+    // Initialize OpenTelemetry tracer
+    let _tracer = init_tracer(&config);
+
+    // Initialize tracing subscriber with OpenTelemetry layer
+    let subscriber = tracing_subscriber::registry()
+        .with(fmt::layer().with_target(false))
+        .with(EnvFilter::from_default_env().add_directive(Level::INFO.into()));
+
+    if config.otel_enabled && config.otel_endpoint.is_some() {
+        let tracer = global::tracer("vectorflow-worker");
+        subscriber.with(OpenTelemetryLayer::new(tracer)).init();
+    } else {
+        subscriber.init();
+    }
+
     let state = Arc::new(AppState {
         config: config.clone(),
         start_time: Instant::now(),
@@ -209,4 +264,7 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+
+    // Shutdown tracer on exit
+    global::shutdown_tracer_provider();
 }

@@ -32,3 +32,10 @@ structlog>=24.1.0
 
 # Retry Logic
 tenacity>=8.2.0
+
+# OpenTelemetry (Distributed Tracing)
+opentelemetry-api>=1.22.0
+opentelemetry-sdk>=1.22.0
+opentelemetry-exporter-otlp>=1.22.0
+opentelemetry-instrumentation-fastapi>=0.43b0
+opentelemetry-instrumentation-httpx>=0.43b0

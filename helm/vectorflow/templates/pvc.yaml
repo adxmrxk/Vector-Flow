@@ -1,0 +1,18 @@
+{{- if and .Values.inference.enabled .Values.inference.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vectorflow.inference.fullname" . }}-pvc
+  labels:
+    {{- include "vectorflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference
+spec:
+  accessModes:
+    - {{ .Values.inference.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.inference.persistence.size }}
+  {{- if .Values.inference.persistence.storageClass }}
+  storageClassName: {{ .Values.inference.persistence.storageClass }}
+  {{- end }}
+{{- end }}

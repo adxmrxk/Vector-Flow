@@ -1,0 +1,27 @@
+apiVersion: v2
+name: vectorflow
+description: Enterprise Semantic Search Platform - Helm Chart
+
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - semantic-search
+  - vector-database
+  - ml-inference
+  - microservices
+
+home: https://github.com/vectorflow/vectorflow
+sources:
+  - https://github.com/vectorflow/vectorflow
+
+maintainers:
+  - name: VectorFlow Team
+    email: team@vectorflow.dev
+
+dependencies: []
+
+annotations:
+  category: Machine Learning
+  licenses: MIT

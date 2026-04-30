@@ -17,6 +17,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
       - WORKER_SERVICE_URL=http://worker:8081
       - INFERENCE_SERVICE_URL=http://inference:8082
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=vectorflow-gateway
+      - OTEL_TRACES_ENABLED=${OTEL_TRACES_ENABLED:-true}
     depends_on:
       worker:
         condition: service_healthy
@@ -43,6 +46,9 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
       - RUST_LOG=debug
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=vectorflow-worker
+      - OTEL_TRACES_ENABLED=${OTEL_TRACES_ENABLED:-true}
     networks:
       - vectorflow-net
     healthcheck:
@@ -68,6 +74,9 @@ services:
       - PINECONE_API_KEY=${PINECONE_API_KEY:-}
       - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT:-us-east-1}
       - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-vectorflow-index}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=vectorflow-inference
+      - OTEL_TRACES_ENABLED=${OTEL_TRACES_ENABLED:-true}
     volumes:
       - model-cache:/app/models
     networks:
@@ -105,6 +114,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ----- Jaeger (Distributed Tracing) -----
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: vectorflow-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - vectorflow-net
+    profiles:
+      - tracing
+      - monitoring
 
   # ----- Prometheus (Monitoring) -----
   prometheus:

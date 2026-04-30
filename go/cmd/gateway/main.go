@@ -16,7 +16,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/vectorflow/gateway/internal/api"
 	"github.com/vectorflow/gateway/internal/config"
+	"github.com/vectorflow/gateway/internal/middleware"
 	"github.com/vectorflow/gateway/internal/service"
+	"github.com/vectorflow/gateway/internal/telemetry"
 )
 
 func main() {
@@ -28,6 +30,21 @@ func main() {
 
 	// Setup logging
 	setupLogging(cfg)
+
+	// Initialize OpenTelemetry tracing
+	otelCfg := telemetry.GetConfigFromEnv("vectorflow-gateway", "0.1.0")
+	shutdownTracer, err := telemetry.InitTracer(otelCfg)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to initialize tracing, continuing without it")
+	} else {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := shutdownTracer(ctx); err != nil {
+				log.Error().Err(err).Msg("Error shutting down tracer")
+			}
+		}()
+	}
 
 	log.Info().
 		Str("environment", cfg.Server.Environment).
@@ -97,22 +114,50 @@ func setupRouter(cfg *config.Config, h *api.Handler) *gin.Engine {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.Tracing("vectorflow-gateway"))
 	r.Use(loggingMiddleware())
 	r.Use(corsMiddleware())
 
-	// Health endpoints
+	// Health endpoints (public)
 	r.GET("/health", h.Health)
 	r.GET("/ready", h.Ready)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// API v1
+	// Auth handler
+	authHandler := api.NewAuthHandler(cfg)
+
+	// Auth endpoints (public)
+	auth := r.Group("/auth")
+	{
+		auth.POST("/register", authHandler.Register)
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/refresh", authHandler.Refresh)
+	}
+
+	// Protected auth endpoints
+	authProtected := r.Group("/auth")
+	authProtected.Use(middleware.JWTAuth(cfg))
+	{
+		authProtected.GET("/me", authHandler.Me)
+		authProtected.GET("/validate", authHandler.ValidateToken)
+	}
+
+	// API v1 - Protected routes
 	v1 := r.Group("/v1")
+	v1.Use(middleware.JWTAuth(cfg))
 	{
 		v1.POST("/embeddings", h.CreateEmbeddings)
 		v1.POST("/search", h.Search)
 		v1.POST("/upsert", h.Upsert)
 		v1.POST("/upsert/batch", h.BatchUpsert)
 		v1.GET("/model", h.GetModelInfo)
+	}
+
+	// Log auth status
+	if cfg.Auth.Enabled {
+		log.Info().Msg("JWT authentication enabled")
+	} else {
+		log.Warn().Msg("JWT authentication disabled - all routes are public")
 	}
 
 	return r

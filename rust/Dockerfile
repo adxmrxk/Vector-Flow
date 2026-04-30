@@ -1,7 +1,7 @@
 # VectorFlow Worker Dockerfile
 FROM rust:alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev perl openssl-dev pkgconfig
 COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo generate-lockfile && cargo build --release && rm -rf src
 COPY src ./src

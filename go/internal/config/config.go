@@ -34,9 +34,13 @@ type ServicesConfig struct {
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
-	Enabled   bool     `mapstructure:"enabled"`
-	JWTSecret string   `mapstructure:"jwt_secret"`
-	APIKeys   []string `mapstructure:"api_keys"`
+	Enabled       bool          `mapstructure:"enabled"`
+	JWTSecret     string        `mapstructure:"jwt_secret"`
+	APIKeys       []string      `mapstructure:"api_keys"`
+	APIKeyHeader  string        `mapstructure:"api_key_header"`
+	TokenExpiry   time.Duration `mapstructure:"token_expiry"`
+	RefreshExpiry time.Duration `mapstructure:"refresh_expiry"`
+	Issuer        string        `mapstructure:"issuer"`
 }
 
 // LoggingConfig holds logging configuration.
@@ -62,8 +66,12 @@ func Load() (*Config, error) {
 	v.SetDefault("services.timeout", "30s")
 
 	v.SetDefault("auth.enabled", false)
-	v.SetDefault("auth.jwt_secret", "")
+	v.SetDefault("auth.jwt_secret", "change-me-in-production-use-strong-secret")
 	v.SetDefault("auth.api_keys", []string{})
+	v.SetDefault("auth.api_key_header", "X-API-Key")
+	v.SetDefault("auth.token_expiry", "24h")
+	v.SetDefault("auth.refresh_expiry", "168h") // 7 days
+	v.SetDefault("auth.issuer", "vectorflow")
 
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
@@ -78,7 +86,9 @@ func Load() (*Config, error) {
 	v.BindEnv("server.environment", "ENVIRONMENT")
 	v.BindEnv("services.worker_url", "WORKER_SERVICE_URL")
 	v.BindEnv("services.inference_url", "INFERENCE_SERVICE_URL")
+	v.BindEnv("auth.enabled", "AUTH_ENABLED")
 	v.BindEnv("auth.jwt_secret", "JWT_SECRET")
+	v.BindEnv("auth.token_expiry", "JWT_EXPIRY")
 	v.BindEnv("logging.level", "LOG_LEVEL")
 
 	// Read config file if exists

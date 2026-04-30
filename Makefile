@@ -10,6 +10,12 @@
 .PHONY: k8s-deploy k8s-delete k8s-status
 .PHONY: lint lint-go lint-rust lint-python lint-frontend
 .PHONY: chef-lint chef-test chef-converge chef-compliance
+.PHONY: cli-install cli-search cli-health cli-status
+.PHONY: minikube-start minikube-stop minikube-delete minikube-dashboard
+.PHONY: cleanup cleanup-local cleanup-aws
+.PHONY: tf-init tf-plan tf-apply tf-destroy tf-fmt
+.PHONY: test-integration test-integration-setup
+.PHONY: helm-lint helm-template helm-install helm-upgrade helm-uninstall helm-package
 
 # Default target
 .DEFAULT_GOAL := help
@@ -206,3 +212,156 @@ ansible-setup: ## Run Ansible local dev setup
 ansible-deploy: ## Run Ansible VectorFlow deployment
 	@echo "Deploying VectorFlow with Ansible..."
 	@cd ansible && ansible-playbook playbooks/deploy-vectorflow.yml
+
+# ===== CLI Commands =====
+CLI_DIR := cli
+
+cli-install: ## Install CLI in development mode
+	@echo "Installing VectorFlow CLI..."
+	@cd $(CLI_DIR) && pip install -e .
+
+cli-search: ## Run a quick search (usage: make cli-search QUERY="your query")
+	@./scripts/vf search "$(QUERY)"
+
+cli-health: ## Check system health via CLI
+	@./scripts/vf-health.sh
+
+cli-status: ## Show detailed system status
+	@./scripts/vf status
+
+# ===== Minikube (Local Kubernetes) =====
+minikube-start: ## Start Minikube with recommended settings
+	@echo "Starting Minikube..."
+	@minikube start --cpus=4 --memory=8192 --driver=docker
+	@minikube addons enable ingress
+	@minikube addons enable metrics-server
+	@echo "Minikube started! Run 'eval \$$(minikube docker-env)' to use Minikube's Docker"
+
+minikube-stop: ## Stop Minikube (preserves data)
+	@echo "Stopping Minikube..."
+	@minikube stop
+
+minikube-delete: ## Delete Minikube cluster (clean slate)
+	@echo "Deleting Minikube cluster..."
+	@minikube delete
+
+minikube-dashboard: ## Open Minikube dashboard
+	@minikube dashboard
+
+minikube-tunnel: ## Start Minikube tunnel for LoadBalancer services
+	@echo "Starting Minikube tunnel (requires sudo)..."
+	@minikube tunnel
+
+local-dev: docker-up ## Start local development (Docker Compose - zero cloud cost)
+	@echo ""
+	@echo "VectorFlow is running locally!"
+	@echo "  Frontend: http://localhost:3000"
+	@echo "  Gateway:  http://localhost:8080"
+	@echo "  Worker:   http://localhost:8081"
+	@echo "  Inference: http://localhost:8082"
+	@echo ""
+	@echo "Cost: \$$0.00"
+
+# ===== Cleanup Commands =====
+cleanup: ## Full cleanup - AWS resources + local (SAFE - requires confirmation)
+	@./scripts/cleanup.sh
+
+cleanup-aws: ## Cleanup AWS resources only
+	@echo "Running AWS-only cleanup..."
+	@./scripts/cleanup.sh
+
+cleanup-local: ## Cleanup local resources only (Docker, Minikube)
+	@echo "Cleaning up local resources..."
+	@docker compose down --remove-orphans 2>/dev/null || true
+	@minikube delete 2>/dev/null || true
+	@docker system prune -f
+	@echo "Local cleanup complete!"
+
+cleanup-docker: ## Remove all VectorFlow Docker resources
+	@echo "Removing VectorFlow Docker resources..."
+	@docker compose down -v --rmi all 2>/dev/null || true
+	@docker images --format "{{.Repository}}:{{.Tag}}" | grep vectorflow | xargs -r docker rmi -f 2>/dev/null || true
+	@echo "Docker cleanup complete!"
+
+# ===== Terraform (Infrastructure as Code) =====
+TERRAFORM_DIR := terraform
+
+tf-init: ## Initialize Terraform
+	@echo "Initializing Terraform..."
+	@cd $(TERRAFORM_DIR) && terraform init
+
+tf-plan: ## Plan Terraform changes
+	@echo "Planning Terraform changes..."
+	@cd $(TERRAFORM_DIR) && terraform plan
+
+tf-apply: ## Apply Terraform changes (creates AWS resources)
+	@echo "Applying Terraform configuration..."
+	@cd $(TERRAFORM_DIR) && terraform apply
+
+tf-destroy: ## Destroy all Terraform-managed AWS resources
+	@echo "Destroying Terraform infrastructure..."
+	@cd $(TERRAFORM_DIR) && terraform destroy
+
+tf-fmt: ## Format Terraform files
+	@cd $(TERRAFORM_DIR) && terraform fmt -recursive
+
+tf-validate: ## Validate Terraform configuration
+	@cd $(TERRAFORM_DIR) && terraform validate
+
+tf-output: ## Show Terraform outputs
+	@cd $(TERRAFORM_DIR) && terraform output
+
+# ===== Integration Tests =====
+test-integration-setup: ## Install integration test dependencies
+	@echo "Installing integration test dependencies..."
+	@pip install -r tests/requirements.txt
+
+test-integration: ## Run integration tests (services must be running)
+	@echo "Running integration tests..."
+	@echo "Note: Services must be running (use 'make docker-up' first)"
+	@pytest tests/integration/ -v --tb=short
+
+test-integration-ci: docker-up ## Run integration tests in CI (starts services first)
+	@echo "Waiting for services to start..."
+	@sleep 30
+	@pytest tests/integration/ -v --tb=short
+	@$(MAKE) docker-down
+
+# ===== Helm (Kubernetes Packaging) =====
+HELM_CHART := helm/vectorflow
+HELM_RELEASE := vectorflow
+HELM_NAMESPACE := vectorflow
+
+helm-lint: ## Lint Helm chart
+	@echo "Linting Helm chart..."
+	@helm lint $(HELM_CHART)
+
+helm-template: ## Render Helm templates locally
+	@echo "Rendering Helm templates..."
+	@helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE)
+
+helm-install: ## Install Helm chart to cluster
+	@echo "Installing VectorFlow Helm chart..."
+	@helm install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace
+
+helm-upgrade: ## Upgrade Helm release
+	@echo "Upgrading VectorFlow Helm chart..."
+	@helm upgrade $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--install
+
+helm-uninstall: ## Uninstall Helm release
+	@echo "Uninstalling VectorFlow Helm chart..."
+	@helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+helm-package: ## Package Helm chart
+	@echo "Packaging Helm chart..."
+	@helm package $(HELM_CHART)
+
+helm-dry-run: ## Dry run Helm install
+	@echo "Dry run Helm install..."
+	@helm install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--dry-run --debug
