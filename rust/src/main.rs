@@ -292,7 +292,17 @@ async fn main() {
         subscriber.init();
     }
 
+    // Explicit buckets make the exporter emit a real Prometheus histogram
+    // (_bucket series). Without them it renders a summary of quantiles, which
+    // histogram_quantile() cannot aggregate across instances.
     let metrics_handle = PrometheusBuilder::new()
+        .set_buckets(&[
+            // Re-ranking is pure CPU work measured in microseconds, so the
+            // range starts well below the usual HTTP defaults.
+            0.000_01, 0.000_025, 0.000_05, 0.000_1, 0.000_25, 0.000_5, 0.001, 0.005, 0.01,
+            0.05, 0.1, 0.5, 1.0,
+        ])
+        .expect("invalid histogram buckets")
         .install_recorder()
         .expect("failed to install Prometheus recorder");
 
