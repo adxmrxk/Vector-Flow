@@ -167,7 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=ErrorResponse(
                 error=exc.__class__.__name__,
                 message=exc.detail,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
     @app.exception_handler(Exception)
@@ -181,7 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error="InternalServerError",
                 message="An unexpected error occurred",
                 detail=str(exc) if not settings.is_production else None,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
     # ----- Health Endpoints -----
