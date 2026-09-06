@@ -12,6 +12,7 @@ use axum::{
 use opentelemetry::global;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -53,6 +54,7 @@ impl Default for AppConfig {
 struct AppState {
     config: AppConfig,
     start_time: Instant,
+    metrics: PrometheusHandle,
 }
 
 // ----- Models -----
@@ -121,6 +123,11 @@ async fn ready() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ready"}))
 }
 
+/// Prometheus scrape endpoint.
+async fn metrics_handler(State(state): State<Arc<AppState>>) -> String {
+    state.metrics.render()
+}
+
 /// Re-rank search results using a simple scoring adjustment
 #[instrument(skip(_state, req), fields(query = %req.query, results_count = req.results.len()))]
 async fn rerank(
@@ -153,9 +160,15 @@ async fn rerank(
     results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     results.truncate(top_k);
 
+    let elapsed = start.elapsed().as_secs_f64();
+    metrics::counter!("vectorflow_worker_requests_total", "endpoint" => "rerank").increment(1);
+    metrics::histogram!("vectorflow_worker_request_latency_seconds", "endpoint" => "rerank")
+        .record(elapsed);
+    metrics::counter!("vectorflow_worker_reranked_results_total").increment(results.len() as u64);
+
     Ok(Json(RerankResponse {
         results,
-        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+        latency_ms: elapsed * 1000.0,
     }))
 }
 
@@ -240,15 +253,21 @@ async fn main() {
         subscriber.init();
     }
 
+    let metrics_handle = PrometheusBuilder::new()
+        .install_recorder()
+        .expect("failed to install Prometheus recorder");
+
     let state = Arc::new(AppState {
         config: config.clone(),
         start_time: Instant::now(),
+        metrics: metrics_handle,
     });
 
     // Build router
     let app = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/metrics", get(metrics_handler))
         .route("/v1/rerank", post(rerank))
         .route("/v1/similarity", post(cosine_similarity))
         .layer(TraceLayer::new_for_http())

@@ -23,7 +23,10 @@ anyhow = "1.0"
 thiserror = "1.0"
 config = "0.14"
 metrics = "0.22"
-metrics-exporter-prometheus = "0.13"
+# default features pull in an HTTP listener + push gateway (native-tls ->
+# OpenSSL), which will not statically link on musl. We serve /metrics via
+# axum ourselves, so only the recorder is needed.
+metrics-exporter-prometheus = { version = "0.13", default-features = false }
 
 [dev-dependencies]
 tokio-test = "0.4"
