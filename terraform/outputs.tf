@@ -85,7 +85,7 @@ output "artifacts_bucket" {
 
 output "connection_info" {
   description = "Connection information for VectorFlow"
-  value = <<-EOT
+  value       = <<-EOT
 
     ============================================
     VectorFlow AWS Infrastructure Deployed!
