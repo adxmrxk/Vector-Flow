@@ -34,7 +34,7 @@ func Tracing(serviceName string) gin.HandlerFunc {
 				semconv.HTTPTarget(c.Request.URL.Path),
 				semconv.HTTPScheme(c.Request.URL.Scheme),
 				semconv.NetHostName(c.Request.Host),
-				semconv.HTTPUserAgent(c.Request.UserAgent()),
+				semconv.UserAgentOriginal(c.Request.UserAgent()),
 				attribute.String("http.client_ip", c.ClientIP()),
 			),
 		)
