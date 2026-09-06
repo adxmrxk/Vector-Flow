@@ -3,20 +3,24 @@
 //! Handles heavy post-processing and re-ranking of search results.
 
 use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
+    extract::{Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{Json, Response},
     routing::{get, post},
     Router,
 };
 use opentelemetry::global;
+use opentelemetry::propagation::Extractor;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{info, instrument, Level};
+use tracing::{info, instrument, Instrument, Level};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -203,6 +207,39 @@ async fn cosine_similarity(
     }))
 }
 
+// ----- Trace Context Propagation -----
+
+/// Reads W3C trace headers off an incoming request.
+struct HeaderExtractor<'a>(&'a HeaderMap);
+
+impl Extractor for HeaderExtractor<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|v| v.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|k| k.as_str()).collect()
+    }
+}
+
+/// Joins the caller's trace instead of starting a new one. Without this the
+/// worker's spans show up in Jaeger as separate traces, so a search cannot be
+/// followed end to end.
+async fn propagate_trace_context(req: Request, next: Next) -> Response {
+    let parent_cx =
+        global::get_text_map_propagator(|p| p.extract(&HeaderExtractor(req.headers())));
+
+    let span = tracing::info_span!(
+        "http_request",
+        otel.name = %format!("{} {}", req.method(), req.uri().path()),
+        http.method = %req.method(),
+        http.target = %req.uri().path(),
+    );
+    span.set_parent(parent_cx);
+
+    next.run(req).instrument(span).await
+}
+
 // ----- Telemetry -----
 
 fn init_tracer(config: &AppConfig) -> Option<sdktrace::Tracer> {
@@ -212,6 +249,8 @@ fn init_tracer(config: &AppConfig) -> Option<sdktrace::Tracer> {
     }
 
     let endpoint = config.otel_endpoint.as_ref()?;
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
 
     let exporter = opentelemetry_otlp::new_exporter()
         .http()
@@ -270,6 +309,7 @@ async fn main() {
         .route("/metrics", get(metrics_handler))
         .route("/v1/rerank", post(rerank))
         .route("/v1/similarity", post(cosine_similarity))
+        .layer(middleware::from_fn(propagate_trace_context))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state);
