@@ -107,13 +107,18 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - NODE_ENV=development
+      # Browser-facing URL (baked into the client bundle at build time).
       - NEXT_PUBLIC_API_URL=http://localhost:${GO_GATEWAY_PORT:-8080}
+      # Server-side URL used by the /api/health route handler inside the network.
+      - GATEWAY_INTERNAL_URL=http://gateway:8080
     depends_on:
       - gateway
     networks:
       - vectorflow-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # 127.0.0.1, not localhost: the Next.js server binds IPv4 only and
+      # localhost resolves to ::1 inside the container.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 10s
       timeout: 5s
       retries: 5
