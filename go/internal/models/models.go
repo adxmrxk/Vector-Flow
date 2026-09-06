@@ -89,6 +89,19 @@ type ModelInfo struct {
 	Loaded            bool   `json:"loaded"`
 }
 
+// RerankRequest is the payload sent to the Rust worker's /v1/rerank endpoint.
+type RerankRequest struct {
+	Query   string         `json:"query"`
+	Results []SearchResult `json:"results"`
+	TopK    int            `json:"top_k,omitempty"`
+}
+
+// RerankResponse is the Rust worker's re-ranked result set.
+type RerankResponse struct {
+	Results   []SearchResult `json:"results"`
+	LatencyMs float64        `json:"latency_ms"`
+}
+
 // IndexInfo represents vector index statistics.
 type IndexInfo struct {
 	Dimension        int                    `json:"dimension"`
