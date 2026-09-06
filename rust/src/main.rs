@@ -192,7 +192,7 @@ async fn cosine_similarity(
 
 // ----- Telemetry -----
 
-fn init_tracer(config: &AppConfig) -> Option<sdktrace::TracerProvider> {
+fn init_tracer(config: &AppConfig) -> Option<sdktrace::Tracer> {
     if !config.otel_enabled {
         info!("OpenTelemetry tracing disabled");
         return None;
@@ -227,15 +227,14 @@ async fn main() {
     let config = AppConfig::default();
 
     // Initialize OpenTelemetry tracer
-    let _tracer = init_tracer(&config);
+    let tracer = init_tracer(&config);
 
     // Initialize tracing subscriber with OpenTelemetry layer
     let subscriber = tracing_subscriber::registry()
         .with(fmt::layer().with_target(false))
         .with(EnvFilter::from_default_env().add_directive(Level::INFO.into()));
 
-    if config.otel_enabled && config.otel_endpoint.is_some() {
-        let tracer = global::tracer("vectorflow-worker");
+    if let Some(tracer) = tracer {
         subscriber.with(OpenTelemetryLayer::new(tracer)).init();
     } else {
         subscriber.init();
