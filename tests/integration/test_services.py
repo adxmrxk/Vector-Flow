@@ -115,10 +115,10 @@ class TestHealthChecks:
 # ----- Gateway to Worker Integration Tests -----
 
 
-class TestGatewayWorkerIntegration:
+class TestWorkerDirect:
     """Tests for Gateway -> Worker communication."""
 
-    def test_rerank_via_gateway(self, http_client: httpx.Client) -> None:
+    def test_rerank_direct(self, http_client: httpx.Client) -> None:
         """Test re-ranking through the gateway (if routed)."""
         # This test verifies the worker is accessible
         response = http_client.post(
@@ -173,7 +173,7 @@ class TestGatewayWorkerIntegration:
 # ----- Gateway to Inference Integration Tests -----
 
 
-class TestGatewayInferenceIntegration:
+class TestInferenceDirect:
     """Tests for Gateway -> Inference communication."""
 
     def test_embeddings_generation(self, http_client: httpx.Client) -> None:
@@ -205,6 +205,62 @@ class TestGatewayInferenceIntegration:
 
 
 # ----- End-to-End Flow Tests -----
+
+
+@pytest.mark.integration
+class TestGatewayRouting:
+    """Requests that actually traverse the gateway to a downstream service.
+
+    The *Direct classes above bypass the gateway entirely, so they cannot catch
+    a gateway that fails to forward, mis-serialises, or omits a route.
+    """
+
+    def test_embeddings_through_gateway(self, http_client: httpx.Client) -> None:
+        """Gateway forwards an embedding request to the inference service."""
+        response = http_client.post(
+            f"{GATEWAY_URL}/v1/embeddings",
+            json={"texts": ["Cars and motorcycles are vehicles."], "normalize": True},
+        )
+        assert response.status_code == 200, response.text
+
+        data = response.json()
+        assert data["dimension"] == 384
+        assert len(data["embeddings"]) == 1
+        assert len(data["embeddings"][0]) == 384
+
+    def test_model_info_through_gateway(self, http_client: httpx.Client) -> None:
+        """Gateway proxies model metadata from the inference service."""
+        response = http_client.get(f"{GATEWAY_URL}/v1/model")
+        assert response.status_code == 200, response.text
+
+        data = response.json()
+        assert data["model_name"]
+        assert data["dimension"] == 384
+        assert data["loaded"] is True
+
+    def test_index_route_is_registered(self, http_client: httpx.Client) -> None:
+        """/v1/index must exist: the UI, the CLI and vf-health.sh all call it."""
+        response = http_client.get(f"{GATEWAY_URL}/v1/index")
+        assert response.status_code != 404, "gateway is missing the /v1/index route"
+
+    def test_gateway_exposes_application_metrics(self, http_client: httpx.Client) -> None:
+        """Gateway must emit its own metrics, not just Go runtime defaults."""
+        http_client.get(f"{GATEWAY_URL}/health")
+        response = http_client.get(f"{GATEWAY_URL}/metrics")
+        assert response.status_code == 200
+        assert "vectorflow_gateway_requests_total" in response.text
+
+    def test_worker_exposes_application_metrics(self, http_client: httpx.Client) -> None:
+        """Worker must expose a Prometheus endpoint; it previously 404'd."""
+        response = http_client.get(f"{WORKER_URL}/metrics")
+        assert response.status_code == 200
+        assert "vectorflow_worker" in response.text
+
+    def test_inference_metrics_are_prometheus_text(self, http_client: httpx.Client) -> None:
+        """Content-Type must be text/plain or Prometheus refuses to scrape."""
+        response = http_client.get(f"{INFERENCE_URL}/metrics")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
 
 
 class TestEndToEndFlows:
