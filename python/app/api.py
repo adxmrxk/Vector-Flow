@@ -388,7 +388,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def index_info() -> dict[str, Any]:
         """Get vector index information."""
         if not vector_store or not vector_store.is_connected:
-            return {"error": "Vector store not connected"}
+            # Returning a 200 with an error body made callers decode zeros and
+            # report "0 vectors" for a store that is simply not connected.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Vector store not connected",
+            )
         return vector_store.describe_index()
 
     return app
