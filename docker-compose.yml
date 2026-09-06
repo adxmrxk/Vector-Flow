@@ -23,6 +23,8 @@ services:
       - AUTH_ENABLED=${AUTH_ENABLED:-false}
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-use-strong-secret}
       - JWT_EXPIRY=${JWT_EXPIRY:-24h}
+      - API_KEYS=${API_KEYS:-}
+      - API_KEY_HEADER=${API_KEY_HEADER:-X-API-Key}
     depends_on:
       worker:
         condition: service_healthy
