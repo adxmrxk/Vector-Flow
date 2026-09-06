@@ -5,11 +5,11 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
-from prometheus_client import Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from app import __version__
 from app.config import Settings, get_settings
@@ -206,9 +206,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ready"}
 
     @app.get("/metrics", tags=["Health"])
-    async def metrics() -> str:
-        """Prometheus metrics endpoint."""
-        return generate_latest().decode()
+    async def metrics() -> Response:
+        """Prometheus metrics endpoint.
+
+        Must be served as Prometheus text format; returning a bare `str` makes
+        FastAPI serialize it as application/json, which scrapers reject.
+        """
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # ----- Embedding Endpoints -----
     @app.post(
