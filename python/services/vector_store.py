@@ -288,8 +288,15 @@ class VectorStoreService:
 
         stats = self._index.describe_index_stats()
 
+        # stats.namespaces maps name -> NamespaceSummary, which is not JSON
+        # serialisable; flatten it to name -> vector_count.
+        namespaces = {
+            name: getattr(summary, "vector_count", summary)
+            for name, summary in (stats.namespaces or {}).items()
+        }
+
         return {
             "dimension": stats.dimension,
             "total_vector_count": stats.total_vector_count,
-            "namespaces": dict(stats.namespaces) if stats.namespaces else {},
+            "namespaces": namespaces,
         }
