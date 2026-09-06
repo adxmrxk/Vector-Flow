@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class SearchResult(BaseModel):
@@ -30,7 +30,8 @@ class HealthStatus(BaseModel):
 
 class ModelInfo(BaseModel):
     """Model information."""
-    name: str
+    # The gateway returns `model_name`; keep `.name` as the CLI-facing attribute.
+    name: str = Field(validation_alias=AliasChoices("model_name", "name"))
     dimension: int
     max_sequence_length: int
     device: str
@@ -38,9 +39,12 @@ class ModelInfo(BaseModel):
 
 class IndexStats(BaseModel):
     """Vector index statistics."""
-    total_vectors: int
+    # The gateway returns `total_vector_count`.
+    total_vectors: int = Field(
+        validation_alias=AliasChoices("total_vector_count", "total_vectors")
+    )
     dimension: int
-    namespaces: dict[str, int] | None = None
+    namespaces: dict[str, Any] | None = None
 
 
 class VectorFlowClient:
@@ -139,8 +143,8 @@ class VectorFlowClient:
         """Perform semantic search."""
         payload: dict[str, Any] = {
             "query": query,
-            "topK": top_k,
-            "includeMetadata": True,
+            "top_k": top_k,
+            "include_metadata": True,
         }
         if namespace:
             payload["namespace"] = namespace
@@ -162,7 +166,7 @@ class VectorFlowClient:
 
         return SearchResponse(
             results=results,
-            latency_ms=data.get("latencyMs", 0),
+            latency_ms=data.get("latency_ms", 0),
         )
 
     
@@ -196,7 +200,7 @@ class VectorFlowClient:
 
         resp = self._client.post("/v1/upsert", json=payload)
         resp.raise_for_status()
-        return resp.json().get("id", id)
+        return (resp.json().get("ids") or [id])[0]
 
     def upsert_batch(
         self,
@@ -210,28 +214,17 @@ class VectorFlowClient:
 
         resp = self._client.post("/v1/upsert/batch", json=payload)
         resp.raise_for_status()
-        return resp.json().get("upsertedCount", len(vectors))
+        return resp.json().get("upserted_count", len(vectors))
 
     
     def model_info(self) -> ModelInfo:
         """Get loaded model information."""
         resp = self._client.get("/v1/model")
         resp.raise_for_status()
-        data = resp.json()
-        return ModelInfo(
-            name=data["name"],
-            dimension=data["dimension"],
-            max_sequence_length=data["maxSequenceLength"],
-            device=data["device"],
-        )
+        return ModelInfo.model_validate(resp.json())
 
     def index_stats(self) -> IndexStats:
         """Get vector index statistics."""
         resp = self._client.get("/v1/index")
         resp.raise_for_status()
-        data = resp.json()
-        return IndexStats(
-            total_vectors=data.get("totalVectors", 0),
-            dimension=data.get("dimension", 0),
-            namespaces=data.get("namespaces"),
-        )
+        return IndexStats.model_validate(resp.json())
