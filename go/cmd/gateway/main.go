@@ -151,6 +151,7 @@ func setupRouter(cfg *config.Config, h *api.Handler) *gin.Engine {
 		v1.POST("/upsert", h.Upsert)
 		v1.POST("/upsert/batch", h.BatchUpsert)
 		v1.GET("/model", h.GetModelInfo)
+		v1.GET("/index", h.GetIndexInfo)
 	}
 
 	// Log auth status
