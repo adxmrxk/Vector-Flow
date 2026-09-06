@@ -20,6 +20,9 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
       - OTEL_SERVICE_NAME=vectorflow-gateway
       - OTEL_TRACES_ENABLED=${OTEL_TRACES_ENABLED:-true}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-use-strong-secret}
+      - JWT_EXPIRY=${JWT_EXPIRY:-24h}
     depends_on:
       worker:
         condition: service_healthy
