@@ -130,11 +130,18 @@ def status(ctx: click.Context) -> None:
     ) as progress:
         progress.add_task("Fetching system status...", total=None)
 
+        index_stats = None
+        index_error: str | None = None
         try:
             with get_client(gateway_url) as client:
                 health_status = client.health()
                 model_info = client.model_info()
-                index_stats = client.index_stats()
+                # The index is optional: with no vector store configured the
+                # gateway returns 503, which should not hide model/gateway info.
+                try:
+                    index_stats = client.index_stats()
+                except Exception as e:  # noqa: BLE001
+                    index_error = str(e).splitlines()[0]
         except Exception as e:
             error_console.print(f"[red]Error:[/red] {e}")
             sys.exit(1)
@@ -149,14 +156,21 @@ def status(ctx: click.Context) -> None:
     console.print(Panel(model_text, title="Model Information", border_style="blue"))
 
     # Index stats panel
-    index_text = (
-        f"[bold]Total Vectors:[/bold] {index_stats.total_vectors:,}\n"
-        f"[bold]Dimension:[/bold] {index_stats.dimension}"
-    )
-    if index_stats.namespaces:
-        ns_list = ", ".join(f"{k}: {v:,}" for k, v in index_stats.namespaces.items())
-        index_text += f"\n[bold]Namespaces:[/bold] {ns_list}"
-    console.print(Panel(index_text, title="Index Statistics", border_style="green"))
+    if index_stats is None:
+        index_text = (
+            "[yellow]Unavailable[/yellow]\n"
+            f"{index_error or 'Vector store not reachable'}"
+        )
+        console.print(Panel(index_text, title="Index Statistics", border_style="yellow"))
+    else:
+        index_text = (
+            f"[bold]Total Vectors:[/bold] {index_stats.total_vectors:,}\n"
+            f"[bold]Dimension:[/bold] {index_stats.dimension}"
+        )
+        if index_stats.namespaces:
+            ns_list = ", ".join(str(k) for k in index_stats.namespaces)
+            index_text += f"\n[bold]Namespaces:[/bold] {ns_list}"
+        console.print(Panel(index_text, title="Index Statistics", border_style="green"))
 
     # Gateway info
     gateway_text = f"[bold]URL:[/bold] {gateway_url}\n[bold]Status:[/bold] {health_status.status}"
