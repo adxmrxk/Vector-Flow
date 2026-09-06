@@ -12,7 +12,15 @@ import (
 
 	"github.com/vectorflow/gateway/internal/config"
 	"github.com/vectorflow/gateway/internal/models"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
+
+// injectTrace writes W3C trace context headers onto an outgoing request so
+// downstream services join the caller's trace instead of starting a new one.
+func injectTrace(ctx context.Context, req *http.Request) {
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+}
 
 // Client provides methods to communicate with downstream services.
 type Client struct {
@@ -48,6 +56,7 @@ func (c *Client) CreateEmbeddings(ctx context.Context, req *models.EmbeddingRequ
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -82,6 +91,7 @@ func (c *Client) Search(ctx context.Context, req *models.SearchRequest) (*models
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -116,6 +126,7 @@ func (c *Client) Upsert(ctx context.Context, req *models.UpsertRequest) (*models
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -150,6 +161,7 @@ func (c *Client) BatchUpsert(ctx context.Context, req *models.BatchUpsertRequest
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -178,6 +190,7 @@ func (c *Client) GetModelInfo(ctx context.Context) (*models.ModelInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -219,6 +232,7 @@ func (c *Client) checkHealth(ctx context.Context, baseURL string) (string, error
 	if err != nil {
 		return "offline", fmt.Errorf("failed to create request: %w", err)
 	}
+	injectTrace(ctx, httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
