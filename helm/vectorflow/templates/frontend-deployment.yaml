@@ -38,8 +38,13 @@ spec:
           env:
             - name: NODE_ENV
               value: {{ .Values.global.environment | quote }}
+            {{- /* Only emit the in-cluster default when the user has not supplied
+                   NEXT_PUBLIC_API_URL themselves; emitting both produces a
+                   duplicate env key and the install is rejected. */}}
+            {{- if not (hasKey .Values.frontend.env "NEXT_PUBLIC_API_URL") }}
             - name: NEXT_PUBLIC_API_URL
               value: "http://{{ include "vectorflow.gateway.fullname" . }}:{{ .Values.gateway.service.port }}"
+            {{- end }}
             {{- range $key, $value := .Values.frontend.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
