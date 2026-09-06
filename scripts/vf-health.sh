@@ -32,10 +32,10 @@ check_endpoint() {
 
 FAILED=0
 
-check_endpoint "Gateway Health" "$GATEWAY_URL/health" || ((FAILED++))
-check_endpoint "Gateway Ready" "$GATEWAY_URL/ready" || ((FAILED++))
-check_endpoint "Model Info" "$GATEWAY_URL/v1/model" || ((FAILED++))
-check_endpoint "Index Stats" "$GATEWAY_URL/v1/index" || ((FAILED++))
+check_endpoint "Gateway Health" "$GATEWAY_URL/health" || FAILED=$((FAILED + 1))
+check_endpoint "Gateway Ready" "$GATEWAY_URL/ready" || FAILED=$((FAILED + 1))
+check_endpoint "Model Info" "$GATEWAY_URL/v1/model" || FAILED=$((FAILED + 1))
+check_endpoint "Index Stats" "$GATEWAY_URL/v1/index" || FAILED=$((FAILED + 1))
 
 WORKER_URL="${RUST_WORKER_URL:-http://localhost:8081}"
 INFERENCE_URL="${PYTHON_INFERENCE_URL:-http://localhost:8082}"
