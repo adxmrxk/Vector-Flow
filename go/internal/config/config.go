@@ -2,6 +2,8 @@
 package config
 
 import (
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -89,6 +91,7 @@ func Load() (*Config, error) {
 	v.BindEnv("auth.enabled", "AUTH_ENABLED")
 	v.BindEnv("auth.jwt_secret", "JWT_SECRET")
 	v.BindEnv("auth.token_expiry", "JWT_EXPIRY")
+	v.BindEnv("auth.api_key_header", "API_KEY_HEADER")
 	v.BindEnv("logging.level", "LOG_LEVEL")
 
 	// Read config file if exists
@@ -108,6 +111,18 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+
+	// API_KEYS is a comma-separated list. Viper cannot unmarshal a scalar env
+	// var into []string, so it is parsed here instead of bound directly.
+	if raw := os.Getenv("API_KEYS"); raw != "" {
+		var keys []string
+		for _, k := range strings.Split(raw, ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				keys = append(keys, k)
+			}
+		}
+		cfg.Auth.APIKeys = keys
 	}
 
 	return &cfg, nil

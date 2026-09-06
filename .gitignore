@@ -66,8 +66,12 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored: these are setuptools build outputs. A bare `lib/` also matched
+# frontend/lib/, so new source files there were silently un-addable.
+/lib/
+/lib64/
+python/lib/
+python/lib64/
 parts/
 sdist/
 var/
@@ -149,11 +153,15 @@ coverage/
 *.lcov
 
 # ----- ML/AI Models (large files) -----
-models/
+# Anchored on purpose: a bare `models/` also matched go/internal/models/,
+# a source package, which silently kept it out of version control.
+/models/
+python/models/
+python/test_models/
 *.pt
 *.pth
 *.onnx
 *.h5
 *.pkl
 *.joblib
-!models/.gitkeep
+!/models/.gitkeep

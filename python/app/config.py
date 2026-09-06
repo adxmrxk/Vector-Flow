@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # ----- Monitoring -----
     prometheus_enabled: bool = True
     prometheus_port: int = 9090
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _normalize_log_level(cls, v: object) -> object:
+        """Accept log levels in any case (env files commonly use lowercase)."""
+        return v.upper() if isinstance(v, str) else v
 
     @property
     def is_production(self) -> bool:

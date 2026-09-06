@@ -34,7 +34,7 @@ func Tracing(serviceName string) gin.HandlerFunc {
 				semconv.HTTPTarget(c.Request.URL.Path),
 				semconv.HTTPScheme(c.Request.URL.Scheme),
 				semconv.NetHostName(c.Request.Host),
-				semconv.HTTPUserAgent(c.Request.UserAgent()),
+				semconv.UserAgentOriginal(c.Request.UserAgent()),
 				attribute.String("http.client_ip", c.ClientIP()),
 			),
 		)
@@ -67,11 +67,4 @@ func Tracing(serviceName string) gin.HandlerFunc {
 			span.SetAttributes(attribute.String("gin.errors", c.Errors.String()))
 		}
 	}
-}
-
-// InjectTraceContext injects trace context into outgoing HTTP headers.
-func InjectTraceContext(ctx gin.Context, headers map[string]string) {
-	propagator := otel.GetTextMapPropagator()
-	carrier := propagation.MapCarrier(headers)
-	propagator.Inject(ctx.Request.Context(), carrier)
 }

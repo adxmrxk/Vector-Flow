@@ -61,11 +61,15 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- if .Values.inference.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.inference.persistence.enabled }}
             - name: model-cache
               mountPath: /app/models
-          {{- end }}
+            {{- end }}
+            # securityContext sets readOnlyRootFilesystem, but torch and
+            # HuggingFace both need a writable temp dir at import time.
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health
@@ -80,12 +84,14 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.inference.resources | nindent 12 }}
-      {{- if .Values.inference.persistence.enabled }}
       volumes:
+        {{- if .Values.inference.persistence.enabled }}
         - name: model-cache
           persistentVolumeClaim:
             claimName: {{ include "vectorflow.inference.fullname" . }}-pvc
-      {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.inference.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

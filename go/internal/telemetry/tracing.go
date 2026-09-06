@@ -47,11 +47,13 @@ func InitTracer(cfg Config) (func(context.Context) error, error) {
 		return nil, err
 	}
 
-	// Create resource with service information
+	// Create resource with service information.
+	// NewSchemaless is deliberate: resource.Default() carries the SDK's own
+	// semconv schema URL, and merging two resources with differing schema URLs
+	// fails with ErrSchemaURLConflict.
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceName(cfg.ServiceName),
 			semconv.ServiceVersion(cfg.ServiceVersion),
 			attribute.String("environment", cfg.Environment),

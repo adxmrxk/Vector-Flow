@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/vectorflow/gateway/internal/api"
 	"github.com/vectorflow/gateway/internal/config"
+	"github.com/vectorflow/gateway/internal/metrics"
 	"github.com/vectorflow/gateway/internal/middleware"
 	"github.com/vectorflow/gateway/internal/service"
 	"github.com/vectorflow/gateway/internal/telemetry"
@@ -115,6 +116,7 @@ func setupRouter(cfg *config.Config, h *api.Handler) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.Tracing("vectorflow-gateway"))
+	r.Use(metrics.Middleware())
 	r.Use(loggingMiddleware())
 	r.Use(corsMiddleware())
 
@@ -151,6 +153,7 @@ func setupRouter(cfg *config.Config, h *api.Handler) *gin.Engine {
 		v1.POST("/upsert", h.Upsert)
 		v1.POST("/upsert/batch", h.BatchUpsert)
 		v1.GET("/model", h.GetModelInfo)
+		v1.GET("/index", h.GetIndexInfo)
 	}
 
 	// Log auth status

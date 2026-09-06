@@ -2,6 +2,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -26,6 +27,25 @@ func NewHandler(cfg *config.Config, client *service.Client) *Handler {
 		cfg:    cfg,
 		client: client,
 	}
+}
+
+// respondDownstream turns a downstream failure into a response that preserves
+// the reason. A bare 500 for every failure mode made "Pinecone is not
+// configured" indistinguishable from "the service crashed".
+func respondDownstream(c *gin.Context, err error, fallbackMsg string) {
+	var de *service.DownstreamError
+	if errors.As(err, &de) {
+		switch {
+		case de.Status == http.StatusServiceUnavailable:
+			c.JSON(http.StatusServiceUnavailable, models.NewErrorResponse(
+				"ServiceUnavailable", de.Message()))
+			return
+		case de.Status >= 400 && de.Status < 500:
+			c.JSON(de.Status, models.NewErrorResponse("BadRequest", de.Message()))
+			return
+		}
+	}
+	c.JSON(http.StatusInternalServerError, models.NewErrorResponse("InternalError", fallbackMsg))
 }
 
 // ----- Health Endpoints -----
@@ -90,10 +110,7 @@ func (h *Handler) CreateEmbeddings(c *gin.Context) {
 	result, err := h.client.CreateEmbeddings(ctx, &req)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create embeddings")
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			"InternalError",
-			"Failed to generate embeddings",
-		))
+		respondDownstream(c, err, "Failed to generate embeddings")
 		return
 	}
 
@@ -127,11 +144,26 @@ func (h *Handler) Search(c *gin.Context) {
 	result, err := h.client.Search(ctx, &req)
 	if err != nil {
 		log.Error().Err(err).Str("query", req.Query).Msg("Search failed")
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			"InternalError",
-			"Search failed",
-		))
+		respondDownstream(c, err, "Search failed")
 		return
+	}
+
+	// Re-rank candidates on the Rust worker. Re-ranking is a refinement, not a
+	// correctness requirement, so a worker failure degrades to the raw
+	// inference ordering rather than failing the whole request.
+	if len(result.Results) > 0 {
+		reranked, rerankErr := h.client.Rerank(ctx, &models.RerankRequest{
+			Query:   req.Query,
+			Results: result.Results,
+			TopK:    req.TopK,
+		})
+		if rerankErr != nil {
+			log.Warn().Err(rerankErr).Str("query", req.Query).
+				Msg("Re-rank failed, returning inference ordering")
+		} else {
+			result.Results = reranked.Results
+			result.TotalResults = len(reranked.Results)
+		}
 	}
 
 	// Add gateway latency
@@ -157,10 +189,7 @@ func (h *Handler) Upsert(c *gin.Context) {
 	result, err := h.client.Upsert(ctx, &req)
 	if err != nil {
 		log.Error().Err(err).Str("id", req.ID).Msg("Upsert failed")
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			"InternalError",
-			"Upsert failed",
-		))
+		respondDownstream(c, err, "Upsert failed")
 		return
 	}
 
@@ -182,10 +211,7 @@ func (h *Handler) BatchUpsert(c *gin.Context) {
 	result, err := h.client.BatchUpsert(ctx, &req)
 	if err != nil {
 		log.Error().Err(err).Int("count", len(req.Vectors)).Msg("Batch upsert failed")
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			"InternalError",
-			"Batch upsert failed",
-		))
+		respondDownstream(c, err, "Batch upsert failed")
 		return
 	}
 
@@ -194,16 +220,26 @@ func (h *Handler) BatchUpsert(c *gin.Context) {
 
 // ----- Info Endpoints -----
 
+// GetIndexInfo returns vector index statistics from the inference service.
+func (h *Handler) GetIndexInfo(c *gin.Context) {
+	ctx := c.Request.Context()
+	result, err := h.client.GetIndexInfo(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get index info")
+		respondDownstream(c, err, "Failed to get index info")
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // GetModelInfo returns information about the loaded model.
 func (h *Handler) GetModelInfo(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.client.GetModelInfo(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get model info")
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			"InternalError",
-			"Failed to get model info",
-		))
+		respondDownstream(c, err, "Failed to get model info")
 		return
 	}
 

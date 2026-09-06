@@ -2,10 +2,12 @@
 FROM rust:alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache musl-dev perl openssl-dev pkgconfig
-COPY Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo generate-lockfile && cargo build --release && rm -rf src
+# Copy the lockfile so dependency versions are reproducible; without it every
+# build re-resolves and can pick up breaking upstream releases.
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release --locked && rm -rf src
 COPY src ./src
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo build --release --locked
 
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates curl

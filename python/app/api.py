@@ -5,11 +5,11 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
-from prometheus_client import Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from app import __version__
 from app.config import Settings, get_settings
@@ -58,7 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
     global embedding_service, vector_store, tracer_provider
 
-    settings = get_settings()
+    # Honour settings handed to create_app(); fall back to the cached global.
+    settings = getattr(app.state, "settings", None) or get_settings()
 
     # Initialize OpenTelemetry tracing
     tracer_provider = init_telemetry(
@@ -115,6 +116,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.state.settings = settings
+
     # ----- OpenTelemetry Instrumentation -----
     instrument_fastapi(app)
 
@@ -167,7 +170,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=ErrorResponse(
                 error=exc.__class__.__name__,
                 message=exc.detail,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
     @app.exception_handler(Exception)
@@ -181,7 +184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error="InternalServerError",
                 message="An unexpected error occurred",
                 detail=str(exc) if not settings.is_production else None,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
     # ----- Health Endpoints -----
@@ -206,9 +209,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ready"}
 
     @app.get("/metrics", tags=["Health"])
-    async def metrics() -> str:
-        """Prometheus metrics endpoint."""
-        return generate_latest().decode()
+    async def metrics() -> Response:
+        """Prometheus metrics endpoint.
+
+        Must be served as Prometheus text format; returning a bare `str` makes
+        FastAPI serialize it as application/json, which scrapers reject.
+        """
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # ----- Embedding Endpoints -----
     @app.post(
@@ -381,7 +388,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def index_info() -> dict[str, Any]:
         """Get vector index information."""
         if not vector_store or not vector_store.is_connected:
-            return {"error": "Vector store not connected"}
+            # Returning a 200 with an error body made callers decode zeros and
+            # report "0 vectors" for a store that is simply not connected.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Vector store not connected",
+            )
         return vector_store.describe_index()
 
     return app
