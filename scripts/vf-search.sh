@@ -25,7 +25,7 @@ if echo "$RESPONSE" | grep -q '"error"'; then
     exit 1
 fi
 
-LATENCY=$(echo "$RESPONSE" | jq -r '.latencyMs // 0')
+LATENCY=$(echo "$RESPONSE" | jq -r '.latency_ms // 0')
 COUNT=$(echo "$RESPONSE" | jq -r '.results | length')
 
 echo "Found $COUNT results in ${LATENCY}ms"
