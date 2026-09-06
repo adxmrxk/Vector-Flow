@@ -16,7 +16,7 @@ torch>=2.1.0
 numpy>=1.26.0
 
 # Vector Database
-pinecone-client>=3.0.0
+pinecone>=5.0.0
 
 # Configuration
 python-dotenv>=1.0.0
