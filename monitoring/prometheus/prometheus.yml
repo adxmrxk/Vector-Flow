@@ -14,19 +14,13 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ['gateway:8080']
-        labels:
-          service: gateway
 
   - job_name: vectorflow-worker
     metrics_path: /metrics
     static_configs:
       - targets: ['worker:8081']
-        labels:
-          service: worker
 
   - job_name: vectorflow-inference
     metrics_path: /metrics
     static_configs:
       - targets: ['inference:8082']
-        labels:
-          service: inference
