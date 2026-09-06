@@ -1,5 +1,7 @@
 """Tests for VectorFlow Inference API."""
 
+from typing import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,10 +22,16 @@ def test_settings() -> Settings:
 
 
 @pytest.fixture
-def client(test_settings: Settings) -> TestClient:
-    """Create test client."""
+def client(test_settings: Settings) -> Iterator[TestClient]:
+    """Create test client.
+
+    TestClient must be used as a context manager, otherwise Starlette never
+    runs the lifespan handler and the embedding model is never loaded --
+    every endpoint then returns 503.
+    """
     app = create_app(test_settings)
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestHealthEndpoints:
