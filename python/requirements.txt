@@ -11,6 +11,10 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
 # ML / Embeddings
+# The CPU wheel index is deliberate: the default PyPI torch pulls the full
+# CUDA stack (~4GB of nvidia-* wheels) and inflates the image to ~14GB, for a
+# service that runs with device=cpu.
+--extra-index-url https://download.pytorch.org/whl/cpu
 sentence-transformers>=2.3.0
 torch>=2.1.0
 numpy>=1.26.0
