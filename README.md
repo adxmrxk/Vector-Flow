@@ -45,6 +45,24 @@ Building that system production-ready requires more than one well-chosen library
 - Exposes Prometheus metrics on every service for Grafana dashboards
 - Ships with provisioning for AWS, Kubernetes (Helm + Kustomize), and config-managed VMs (Ansible + Chef)
 
+
+### Measured Performance
+
+Numbers from a local Docker Compose run against a Pinecone serverless index in
+`us-east-1`, 5,006 vectors, `all-MiniLM-L6-v2` on CPU:
+
+| Metric | Result |
+|--------|--------|
+| Bulk ingest | 5,000 docs, 0 failures, 32.1s (**~156 docs/sec**) |
+| Search latency p50 | **69 ms** |
+| Search latency p95 | **131 ms** |
+| Search latency p99 | 257 ms |
+
+Latencies are **client-observed round trip** over 60 queries: embedding
+generation on CPU, the network hop to Pinecone, the Rust re-rank, and Docker
+port forwarding are all included. Pinecone's own ANN time is a fraction of
+this and was not measured in isolation.
+
 ---
 
 ## The Three-Language Architecture
@@ -199,7 +217,7 @@ Ingest follows a parallel path: client posts text to `/v1/upsert`, the gateway f
 
 | Tool          | Purpose |
 |---------------|---------|
-| **Terraform** | AWS infrastructure (`terraform/main.tf`). Reusable variables and outputs. |
+| **Terraform** | AWS infrastructure (`terraform/main.tf`): VPC, EKS, ECR, S3 artifact bucket, ALB security group, and a CloudWatch billing alarm. Passes `terraform validate`; **not yet applied to a live AWS account**. |
 | **Helm**      | Production-grade Kubernetes chart with HPA, ingress, PVC, and serviceaccount templates. |
 | **Kustomize** | Raw Kubernetes manifests per service (gateway, worker, inference, frontend) with NetworkPolicy. |
 
@@ -294,7 +312,7 @@ vectorflow/
 ├── helm/vectorflow/                  Helm chart (preferred K8s path)
 │   ├── Chart.yaml
 │   ├── values.yaml
-│   └── templates/                    Templated deployments, services, HPA, ingress, PVC, RBAC
+│   └── templates/                    Templated deployments, services, HPA, ingress, PVC, ServiceAccount
 │
 ├── terraform/                        AWS infrastructure
 │   ├── main.tf
@@ -474,7 +492,7 @@ make helm-install                   # Install to current cluster
 make helm-upgrade                   # Upgrade to a new release
 ```
 
-The chart includes templated deployments for all four services, HorizontalPodAutoscaler, NGINX Ingress, PersistentVolumeClaim for the model cache, and a ServiceAccount with appropriate RBAC.
+The chart includes templated deployments for all four services, HorizontalPodAutoscaler, NGINX Ingress (disabled by default; enable with `--set ingress.enabled=true`), PersistentVolumeClaim for the model cache, and a ServiceAccount. No Role or RoleBinding is shipped: the services are stateless HTTP servers and need no Kubernetes API access.
 
 ### 3. Kubernetes via Kustomize (Raw Manifests)
 
@@ -496,7 +514,18 @@ make tf-apply
 
 Provisions the AWS infrastructure declared in `terraform/main.tf`. Customize variables in `terraform/terraform.tfvars`.
 
+The configuration is validated (`terraform init` + `terraform validate` succeed) but has **not been applied to a live account**, so the plan is unproven against real AWS APIs.
+
+> **This is not free tier.** It provisions an EKS cluster (control plane ~$73/month), a NAT gateway (~$32/month), and EC2 worker nodes. `terraform/main.tf` includes a CloudWatch billing alarm, but set `create_billing_alarm = true` and a threshold you are comfortable with before running `make tf-apply`. Use `make tf-destroy` to tear everything down.
+
 ### 5. Configuration Management via Ansible
+
+Install the required collections first — three of the four playbooks depend on
+them and will not even parse otherwise:
+
+```bash
+cd ansible && ansible-galaxy install -r requirements.yml
+```
 
 ```bash
 make ansible-setup                  # Run local-dev-setup.yml
@@ -504,6 +533,8 @@ make ansible-deploy                 # Run deploy-vectorflow.yml
 ```
 
 Useful for managing VMs or bare-metal nodes where Kubernetes is overkill.
+All four playbooks pass `ansible-playbook --syntax-check`; they have **not been
+run against real hosts**.
 
 ### 6. Configuration Management via Chef
 
