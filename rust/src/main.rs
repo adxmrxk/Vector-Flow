@@ -326,3 +326,143 @@ async fn main() {
     // Shutdown tracer on exit
     global::shutdown_tracer_provider();
 }
+
+// ----- Tests -----
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> Arc<AppState> {
+        Arc::new(AppState {
+            config: AppConfig::default(),
+            start_time: Instant::now(),
+            metrics: PrometheusBuilder::new().build_recorder().handle(),
+        })
+    }
+
+    fn result(id: &str, score: f64, text: &str) -> SearchResult {
+        SearchResult {
+            id: id.to_string(),
+            score,
+            metadata: Some(serde_json::json!({ "text": text })),
+        }
+    }
+
+    #[tokio::test]
+    async fn cosine_identical_vectors_is_one() {
+        let resp = cosine_similarity(Json(SimilarityRequest {
+            vector_a: vec![1.0, 2.0, 3.0],
+            vector_b: vec![1.0, 2.0, 3.0],
+        }))
+        .await
+        .expect("should succeed");
+        assert!((resp.0.similarity - 1.0).abs() < 1e-9);
+        assert_eq!(resp.0.method, "cosine");
+    }
+
+    #[tokio::test]
+    async fn cosine_orthogonal_vectors_is_zero() {
+        let resp = cosine_similarity(Json(SimilarityRequest {
+            vector_a: vec![1.0, 0.0],
+            vector_b: vec![0.0, 1.0],
+        }))
+        .await
+        .expect("should succeed");
+        assert!(resp.0.similarity.abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn cosine_opposite_vectors_is_negative_one() {
+        let resp = cosine_similarity(Json(SimilarityRequest {
+            vector_a: vec![1.0, 0.0],
+            vector_b: vec![-1.0, 0.0],
+        }))
+        .await
+        .expect("should succeed");
+        assert!((resp.0.similarity + 1.0).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn cosine_zero_vector_does_not_divide_by_zero() {
+        let resp = cosine_similarity(Json(SimilarityRequest {
+            vector_a: vec![0.0, 0.0],
+            vector_b: vec![1.0, 1.0],
+        }))
+        .await
+        .expect("should succeed");
+        assert_eq!(resp.0.similarity, 0.0);
+    }
+
+    #[tokio::test]
+    async fn cosine_rejects_dimension_mismatch() {
+        let err = cosine_similarity(Json(SimilarityRequest {
+            vector_a: vec![1.0, 0.0, 0.0],
+            vector_b: vec![1.0, 0.0],
+        }))
+        .await
+        .expect_err("mismatched dimensions must be rejected");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn rerank_boosts_query_term_overlap() {
+        // "a" starts ahead on raw score but shares no query terms; "b" overlaps
+        // fully and should overtake it after the 10%-per-overlap boost.
+        let resp = rerank(
+            State(state()),
+            Json(RerankRequest {
+                query: "electric car battery".to_string(),
+                results: vec![
+                    result("a", 0.50, "a boat on the sea"),
+                    result("b", 0.49, "electric car battery range"),
+                ],
+                top_k: None,
+            }),
+        )
+        .await
+        .expect("should succeed");
+
+        let ids: Vec<&str> = resp.0.results.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["b", "a"], "full-overlap result should rank first");
+        assert!((resp.0.results[0].score - 0.539).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn rerank_truncates_to_top_k() {
+        let resp = rerank(
+            State(state()),
+            Json(RerankRequest {
+                query: "x".to_string(),
+                results: vec![
+                    result("a", 0.9, "one"),
+                    result("b", 0.8, "two"),
+                    result("c", 0.7, "three"),
+                ],
+                top_k: Some(2),
+            }),
+        )
+        .await
+        .expect("should succeed");
+        assert_eq!(resp.0.results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn rerank_handles_missing_metadata() {
+        let resp = rerank(
+            State(state()),
+            Json(RerankRequest {
+                query: "anything".to_string(),
+                results: vec![SearchResult {
+                    id: "no-meta".to_string(),
+                    score: 0.42,
+                    metadata: None,
+                }],
+                top_k: None,
+            }),
+        )
+        .await
+        .expect("results without metadata must not panic");
+        assert_eq!(resp.0.results[0].score, 0.42);
+    }
+}
