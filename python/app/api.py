@@ -58,7 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
     global embedding_service, vector_store, tracer_provider
 
-    settings = get_settings()
+    # Honour settings handed to create_app(); fall back to the cached global.
+    settings = getattr(app.state, "settings", None) or get_settings()
 
     # Initialize OpenTelemetry tracing
     tracer_provider = init_telemetry(
@@ -114,6 +115,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if not settings.is_production else None,
         lifespan=lifespan,
     )
+
+    app.state.settings = settings
 
     # ----- OpenTelemetry Instrumentation -----
     instrument_fastapi(app)
