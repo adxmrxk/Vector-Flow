@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     batch_size: int = 32
     max_sequence_length: int = 512
     device: Literal["cpu", "cuda", "mps"] = "cpu"
+    chunk_overlap_tokens: int = 50
+
+    # ----- Hybrid Search -----
+    # SQLite FTS5 keyword index that sits alongside Pinecone's dense search.
+    # Set to "" to disable hybrid search and fall back to dense-only.
+    keyword_index_path: str = "./data/keyword_index.db"
 
     # ----- Pinecone -----
     pinecone_api_key: str = ""

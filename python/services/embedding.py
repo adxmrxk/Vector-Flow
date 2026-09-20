@@ -1,5 +1,6 @@
 """Embedding service using Sentence Transformers."""
 
+import threading
 import time
 from typing import Any
 
@@ -9,8 +10,18 @@ from sentence_transformers import SentenceTransformer
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import Settings
+from services.chunking import chunk_text
 
 logger = structlog.get_logger(__name__)
+
+# Loading a SentenceTransformer from its on-disk cache still takes ~2s (model
+# deserialization, not the network download). A process that creates more
+# than one EmbeddingService for the same model -- every test that spins up a
+# fresh app via the `client` fixture, notably -- was paying that cost again
+# each time. Keyed on everything that affects how the model behaves, so
+# distinct settings never share a cached instance.
+_MODEL_CACHE: dict[tuple[str, str, str, int], SentenceTransformer] = {}
+_MODEL_CACHE_LOCK = threading.Lock()
 
 
 class EmbeddingService:
@@ -41,6 +52,24 @@ class EmbeddingService:
         Raises:
             RuntimeError: If model fails to load after retries
         """
+        cache_key = (
+            self.settings.model_name,
+            self.settings.model_cache_dir,
+            self.settings.device,
+            self.settings.max_sequence_length,
+        )
+        with _MODEL_CACHE_LOCK:
+            cached_model = _MODEL_CACHE.get(cache_key)
+
+        if cached_model is not None:
+            self._model = cached_model
+            self._model_loaded = True
+            logger.info(
+                "Reusing already-loaded embedding model",
+                model=self.settings.model_name,
+            )
+            return
+
         logger.info(
             "Loading embedding model",
             model=self.settings.model_name,
@@ -62,6 +91,9 @@ class EmbeddingService:
 
             self._model_loaded = True
             load_time = time.time() - start_time
+
+            with _MODEL_CACHE_LOCK:
+                _MODEL_CACHE[cache_key] = self._model
 
             logger.info(
                 "Model loaded successfully",
@@ -151,6 +183,30 @@ class EmbeddingService:
             },
             "latency_ms": round(encode_time * 1000, 2),
         }
+
+    def chunk_text(self, text: str) -> list[str]:
+        """Split text into windows that fit the model's max sequence length.
+
+        Returns a single-element list containing the original text unchanged
+        when it already fits, so callers can always iterate the result
+        without a branch for the common short-text case.
+
+        Raises:
+            RuntimeError: If model is not loaded
+        """
+        self._ensure_model_loaded()
+        if self._model is None:
+            raise RuntimeError("Model not loaded")
+
+        # Leave headroom for the [CLS]/[SEP] special tokens sentence-transformers
+        # adds automatically at encode time.
+        max_tokens = max(self.settings.max_sequence_length - 2, 1)
+        return chunk_text(
+            text,
+            self._model.tokenizer,
+            max_tokens,
+            min(self.settings.chunk_overlap_tokens, max_tokens - 1),
+        )
 
     def embed_single(self, text: str, normalize: bool = True) -> list[float]:
         """Generate embedding for a single text.

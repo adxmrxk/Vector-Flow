@@ -18,6 +18,7 @@ def test_settings() -> Settings:
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         model_cache_dir="./test_models",
         pinecone_api_key="",  # Disable Pinecone for tests
+        keyword_index_path=":memory:",
     )
 
 
