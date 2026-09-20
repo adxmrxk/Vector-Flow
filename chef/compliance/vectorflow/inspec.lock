@@ -1,0 +1,8 @@
+---
+lockfile_version: 1
+depends:
+- name: linux-baseline
+  resolved_source:
+    url: https://github.com/dev-sec/linux-baseline/archive/a9e6ad61d819c248bc2400d7750b3e2632dd0db2.tar.gz
+    sha256: e66344334f5863ea7d30cc9815c50ec63b9ac734413eb31a32d986b068a0385f
+  version_constraints: []
