@@ -11,9 +11,5 @@ supports 'debian', '>= 10.0'
 supports 'centos', '>= 8.0'
 supports 'amazon', '>= 2.0'
 
-depends 'apt', '~> 7.0'
-depends 'yum', '~> 7.0'
-depends 'ntp', '~> 5.0'
-
 issues_url 'https://github.com/vectorflow/vectorflow/issues'
 source_url 'https://github.com/vectorflow/vectorflow'

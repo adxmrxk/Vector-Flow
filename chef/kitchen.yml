@@ -14,6 +14,7 @@ driver:
   name: docker
   privileged: true
   use_sudo: false
+  run_options: -p 2222:22
 
 provisioner:
   name: chef_zero

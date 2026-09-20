@@ -130,9 +130,9 @@ jenkins/secrets/
 jenkins/*.log
 
 # ----- Chef -----
-infrastructure/chef/.chef/
-infrastructure/chef/cookbooks/*/Berksfile.lock
-infrastructure/chef/nodes/
+chef/.kitchen/
+chef/cookbooks/*/Berksfile.lock
+chef/nodes/
 
 # ----- Build Artifacts -----
 bin/
@@ -158,6 +158,7 @@ coverage/
 /models/
 python/models/
 python/test_models/
+python/data/
 *.pt
 *.pth
 *.onnx
