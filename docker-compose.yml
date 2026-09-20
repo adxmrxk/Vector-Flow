@@ -25,10 +25,15 @@ services:
       - JWT_EXPIRY=${JWT_EXPIRY:-24h}
       - API_KEYS=${API_KEYS:-}
       - API_KEY_HEADER=${API_KEY_HEADER:-X-API-Key}
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - REDIS_URL=redis://redis:6379/0
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
     depends_on:
       worker:
         condition: service_healthy
       inference:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - vectorflow-net
@@ -121,6 +126,18 @@ services:
       # 127.0.0.1, not localhost: the Next.js server binds IPv4 only and
       # localhost resolves to ::1 inside the container.
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----- Redis (Search Result Cache) -----
+  redis:
+    image: redis:7-alpine
+    container_name: vectorflow-redis
+    networks:
+      - vectorflow-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

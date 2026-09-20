@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/vectorflow/gateway/internal/cache"
 	"github.com/vectorflow/gateway/internal/config"
 	"github.com/vectorflow/gateway/internal/metrics"
 	"github.com/vectorflow/gateway/internal/models"
@@ -52,6 +53,7 @@ type Client struct {
 	httpClient   *http.Client
 	inferenceURL string
 	workerURL    string
+	cache        *cache.Cache
 }
 
 // NewClient creates a new service client.
@@ -62,6 +64,7 @@ func NewClient(cfg *config.Config) *Client {
 		},
 		inferenceURL: cfg.Services.InferenceURL,
 		workerURL:    cfg.Services.WorkerURL,
+		cache:        cache.New(cfg),
 	}
 }
 
@@ -104,8 +107,18 @@ func (c *Client) CreateEmbeddings(ctx context.Context, req *models.EmbeddingRequ
 	return &result, nil
 }
 
-// Search calls the inference service to perform semantic search.
+// Search calls the inference service to perform semantic search, serving
+// from cache when an identical search has run recently against the same
+// namespace and nothing has been upserted into it since.
 func (c *Client) Search(ctx context.Context, req *models.SearchRequest) (*models.SearchResponse, error) {
+	// Computed once and reused for both the lookup and the eventual store:
+	// each independently fetching the namespace's cache version used to cost
+	// an extra Redis round trip on every cache miss.
+	cacheKey := c.cache.SearchKey(ctx, req.Namespace, req)
+	if cached, hit := c.cache.Lookup(ctx, cacheKey); hit {
+		return cached, nil
+	}
+
 	url := fmt.Sprintf("%s/v1/search", c.inferenceURL)
 	start := time.Now()
 
@@ -137,6 +150,8 @@ func (c *Client) Search(ctx context.Context, req *models.SearchRequest) (*models
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+
+	c.cache.Store(ctx, cacheKey, &result)
 
 	return &result, nil
 }
@@ -175,6 +190,8 @@ func (c *Client) Upsert(ctx context.Context, req *models.UpsertRequest) (*models
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	c.cache.InvalidateNamespace(ctx, req.Namespace)
+
 	return &result, nil
 }
 
@@ -210,6 +227,14 @@ func (c *Client) BatchUpsert(ctx context.Context, req *models.BatchUpsertRequest
 	var result models.UpsertResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	invalidated := make(map[string]bool)
+	for _, v := range req.Vectors {
+		if !invalidated[v.Namespace] {
+			c.cache.InvalidateNamespace(ctx, v.Namespace)
+			invalidated[v.Namespace] = true
+		}
 	}
 
 	return &result, nil

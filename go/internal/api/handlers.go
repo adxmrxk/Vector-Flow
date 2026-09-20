@@ -4,11 +4,13 @@ package api
 import (
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"github.com/vectorflow/gateway/internal/config"
+	"github.com/vectorflow/gateway/internal/middleware"
 	"github.com/vectorflow/gateway/internal/models"
 	"github.com/vectorflow/gateway/internal/service"
 )
@@ -48,14 +50,54 @@ func respondDownstream(c *gin.Context, err error, fallbackMsg string) {
 	c.JSON(http.StatusInternalServerError, models.NewErrorResponse("InternalError", fallbackMsg))
 }
 
+// resolveNamespace enforces tenant isolation. Search/upsert requests carry a
+// caller-supplied namespace that was previously forwarded to Pinecone as-is,
+// so any authenticated caller could read or write any other tenant's data by
+// naming their namespace in the request body. When auth is enabled, a
+// non-admin caller's namespace is always overridden with one derived from
+// their own JWT identity; only admins may target an arbitrary namespace.
+// With auth disabled (local/dev mode) the request's namespace passes through
+// unchanged, matching the previous single-tenant behavior.
+func resolveNamespace(cfg *config.Config, c *gin.Context, requested string) string {
+	if !cfg.Auth.Enabled {
+		return requested
+	}
+
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		return requested
+	}
+
+	if claims.Role == "admin" && requested != "" {
+		return requested
+	}
+
+	return "tenant-" + claims.UserID
+}
+
 // ----- Health Endpoints -----
 
 // Health handles health check requests.
+//
+// The two downstream checks run concurrently rather than sequentially: they
+// are independent, so the endpoint's latency should be the slower of the
+// two, not their sum. This matters because Docker/Kubernetes hit this
+// endpoint on a fixed interval for the life of the process.
 func (h *Handler) Health(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	workerStatus, _ := h.client.CheckWorkerHealth(ctx)
-	inferenceStatus, _ := h.client.CheckInferenceHealth(ctx)
+	var workerStatus, inferenceStatus string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		workerStatus, _ = h.client.CheckWorkerHealth(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		inferenceStatus, _ = h.client.CheckInferenceHealth(ctx)
+	}()
+	wg.Wait()
 
 	status := "healthy"
 	if workerStatus != "healthy" || inferenceStatus != "healthy" {
@@ -137,6 +179,7 @@ func (h *Handler) Search(c *gin.Context) {
 	if !req.IncludeMetadata {
 		req.IncludeMetadata = true
 	}
+	req.Namespace = resolveNamespace(h.cfg, c, req.Namespace)
 
 	ctx := c.Request.Context()
 	startTime := time.Now()
@@ -184,6 +227,7 @@ func (h *Handler) Upsert(c *gin.Context) {
 		))
 		return
 	}
+	req.Namespace = resolveNamespace(h.cfg, c, req.Namespace)
 
 	ctx := c.Request.Context()
 	result, err := h.client.Upsert(ctx, &req)
@@ -205,6 +249,9 @@ func (h *Handler) BatchUpsert(c *gin.Context) {
 			err.Error(),
 		))
 		return
+	}
+	for i := range req.Vectors {
+		req.Vectors[i].Namespace = resolveNamespace(h.cfg, c, req.Vectors[i].Namespace)
 	}
 
 	ctx := c.Request.Context()

@@ -6,9 +6,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vectorflow/gateway/internal/config"
+	"github.com/vectorflow/gateway/internal/middleware"
 	"github.com/vectorflow/gateway/internal/models"
 	"github.com/vectorflow/gateway/internal/service"
 )
@@ -28,6 +30,18 @@ func doJSON(h gin.HandlerFunc, method, path, body string) *httptest.ResponseReco
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(method, path, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
+	h(c)
+	return w
+}
+
+// doJSONAs is doJSON but with JWT claims already present in the context, the
+// way middleware.JWTAuth would have left them for a handler running behind it.
+func doJSONAs(h gin.HandlerFunc, claims *middleware.Claims, method, path, body string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(middleware.ContextKey, claims)
 	h(c)
 	return w
 }
@@ -192,5 +206,186 @@ func TestSearchRejectsInvalidPayload(t *testing.T) {
 	w := doJSON(h.Search, http.MethodPost, "/v1/search", `{"top_k":5}`)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for a missing query", w.Code)
+	}
+}
+
+// newAuthedTestHandler is newTestHandler with auth enabled, which is what
+// activates resolveNamespace's tenant-isolation override.
+func newAuthedTestHandler(inferenceURL, workerURL string) *Handler {
+	cfg := &config.Config{}
+	cfg.Services.InferenceURL = inferenceURL
+	cfg.Services.WorkerURL = workerURL
+	cfg.Auth.Enabled = true
+	return NewHandler(cfg, service.NewClient(cfg))
+}
+
+// capturedNamespace starts a stub inference server that decodes whatever
+// SearchRequest/UpsertRequest it receives and records the namespace field,
+// so tests can assert what actually reached the downstream service rather
+// than just what the handler returned.
+func capturedNamespaceServer(t *testing.T, ns *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Namespace string                 `json:"namespace"`
+			Vectors   []models.UpsertRequest `json:"vectors"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if len(body.Vectors) > 0 {
+			for _, v := range body.Vectors {
+				*ns = append(*ns, v.Namespace)
+			}
+		} else {
+			*ns = append(*ns, body.Namespace)
+		}
+
+		switch r.URL.Path {
+		case "/v1/search":
+			_ = json.NewEncoder(w).Encode(models.SearchResponse{Query: "q"})
+		case "/v1/upsert", "/v1/upsert/batch":
+			_ = json.NewEncoder(w).Encode(models.UpsertResponse{})
+		}
+	}))
+}
+
+// TestSearchNamespaceIsolatedForNonAdmin is the regression test for the gap
+// found in review: SearchRequest.Namespace was forwarded to Pinecone
+// unchecked, so any authenticated caller could read another tenant's
+// namespace just by naming it. With auth enabled, a non-admin caller's
+// requested namespace must be ignored and replaced with one derived from
+// their own JWT identity.
+func TestSearchNamespaceIsolatedForNonAdmin(t *testing.T) {
+	var seen []string
+	inference := capturedNamespaceServer(t, &seen)
+	defer inference.Close()
+
+	h := newAuthedTestHandler(inference.URL, inference.URL)
+	claims := &middleware.Claims{UserID: "alice", Role: "user"}
+	w := doJSONAs(h.Search, claims, http.MethodPost, "/v1/search",
+		`{"query":"q","namespace":"someone-elses-tenant"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if len(seen) != 1 || seen[0] != "tenant-alice" {
+		t.Errorf("namespace sent downstream = %v, want [tenant-alice]", seen)
+	}
+}
+
+// TestSearchNamespacePassthroughForAdmin lets an admin target an explicit
+// namespace, e.g. for cross-tenant support/debugging.
+func TestSearchNamespacePassthroughForAdmin(t *testing.T) {
+	var seen []string
+	inference := capturedNamespaceServer(t, &seen)
+	defer inference.Close()
+
+	h := newAuthedTestHandler(inference.URL, inference.URL)
+	claims := &middleware.Claims{UserID: "admin-1", Role: "admin"}
+	w := doJSONAs(h.Search, claims, http.MethodPost, "/v1/search",
+		`{"query":"q","namespace":"customer-42"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if len(seen) != 1 || seen[0] != "customer-42" {
+		t.Errorf("namespace sent downstream = %v, want [customer-42]", seen)
+	}
+}
+
+// TestSearchNamespacePassthroughWhenAuthDisabled preserves the original
+// single-tenant/dev-mode behavior: with auth off there's no identity to
+// derive a tenant namespace from, so the caller's value is used as-is.
+func TestSearchNamespacePassthroughWhenAuthDisabled(t *testing.T) {
+	var seen []string
+	inference := capturedNamespaceServer(t, &seen)
+	defer inference.Close()
+
+	h := newTestHandler(inference.URL, inference.URL)
+	w := doJSON(h.Search, http.MethodPost, "/v1/search", `{"query":"q","namespace":"anything"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if len(seen) != 1 || seen[0] != "anything" {
+		t.Errorf("namespace sent downstream = %v, want [anything]", seen)
+	}
+}
+
+// TestUpsertNamespaceIsolatedForNonAdmin covers the write path, not just search.
+func TestUpsertNamespaceIsolatedForNonAdmin(t *testing.T) {
+	var seen []string
+	inference := capturedNamespaceServer(t, &seen)
+	defer inference.Close()
+
+	h := newAuthedTestHandler(inference.URL, inference.URL)
+	claims := &middleware.Claims{UserID: "bob", Role: "user"}
+	w := doJSONAs(h.Upsert, claims, http.MethodPost, "/v1/upsert",
+		`{"id":"1","text":"hello","namespace":"someone-elses-tenant"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if len(seen) != 1 || seen[0] != "tenant-bob" {
+		t.Errorf("namespace sent downstream = %v, want [tenant-bob]", seen)
+	}
+}
+
+// TestHealthChecksDownstreamServicesConcurrently is a before/after
+// regression test: Health used to call CheckWorkerHealth then
+// CheckInferenceHealth sequentially, so /health's latency was the SUM of
+// both downstream calls. With two stub services that each take ~80ms,
+// sequential would take ~160ms; concurrent should take close to ~80ms.
+func TestHealthChecksDownstreamServicesConcurrently(t *testing.T) {
+	const delay = 80 * time.Millisecond
+
+	slow := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(delay)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+		}))
+	}
+	worker, inference := slow(), slow()
+	defer worker.Close()
+	defer inference.Close()
+
+	h := newTestHandler(inference.URL, worker.URL)
+
+	start := time.Now()
+	w := doJSON(h.Health, http.MethodGet, "/health", "")
+	elapsed := time.Since(start)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	// Sequential would take ~2*delay (~160ms); allow generous headroom above
+	// a single delay for scheduling jitter while still catching a regression
+	// back to sequential calls.
+	if elapsed >= 2*delay {
+		t.Errorf("Health took %v; want well under %v (the sequential-call time), "+
+			"got no faster than doing both calls one after another", elapsed, 2*delay)
+	}
+}
+
+// TestBatchUpsertNamespaceIsolatedForNonAdmin checks every vector in a batch
+// is re-namespaced individually, not just the first.
+func TestBatchUpsertNamespaceIsolatedForNonAdmin(t *testing.T) {
+	var seen []string
+	inference := capturedNamespaceServer(t, &seen)
+	defer inference.Close()
+
+	h := newAuthedTestHandler(inference.URL, inference.URL)
+	claims := &middleware.Claims{UserID: "carol", Role: "user"}
+	w := doJSONAs(h.BatchUpsert, claims, http.MethodPost, "/v1/upsert/batch", `{"vectors":[
+		{"id":"1","text":"a","namespace":"other-tenant-a"},
+		{"id":"2","text":"b","namespace":"other-tenant-b"}
+	]}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	for _, got := range seen {
+		if got != "tenant-carol" {
+			t.Errorf("namespace sent downstream = %v, want every vector namespaced tenant-carol", seen)
+		}
 	}
 }

@@ -15,6 +15,7 @@ type Config struct {
 	Services ServicesConfig
 	Auth     AuthConfig
 	Logging  LoggingConfig
+	Cache    CacheConfig
 }
 
 // ServerConfig holds server-specific configuration.
@@ -51,6 +52,13 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"`
 }
 
+// CacheConfig holds search result cache configuration.
+type CacheConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	RedisURL   string `mapstructure:"redis_url"`
+	TTLSeconds int    `mapstructure:"ttl_seconds"`
+}
+
 // Load reads configuration from environment variables and config files.
 func Load() (*Config, error) {
 	v := viper.New()
@@ -78,6 +86,10 @@ func Load() (*Config, error) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 
+	v.SetDefault("cache.enabled", false)
+	v.SetDefault("cache.redis_url", "redis://localhost:6379/0")
+	v.SetDefault("cache.ttl_seconds", 300)
+
 	// Bind environment variables
 	v.SetEnvPrefix("GATEWAY")
 	v.AutomaticEnv()
@@ -93,6 +105,9 @@ func Load() (*Config, error) {
 	v.BindEnv("auth.token_expiry", "JWT_EXPIRY")
 	v.BindEnv("auth.api_key_header", "API_KEY_HEADER")
 	v.BindEnv("logging.level", "LOG_LEVEL")
+	v.BindEnv("cache.enabled", "CACHE_ENABLED")
+	v.BindEnv("cache.redis_url", "REDIS_URL")
+	v.BindEnv("cache.ttl_seconds", "CACHE_TTL_SECONDS")
 
 	// Read config file if exists
 	v.SetConfigName("config")
