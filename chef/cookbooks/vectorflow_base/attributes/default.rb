@@ -19,7 +19,7 @@ default['vectorflow']['base']['data_dir'] = '/var/lib/vectorflow'
 default['vectorflow']['base']['config_dir'] = '/etc/vectorflow'
 
 # System packages
-default['vectorflow']['base']['packages'] = %w[
+default['vectorflow']['base']['packages'] = %w(
   curl
   wget
   git
@@ -32,7 +32,7 @@ default['vectorflow']['base']['packages'] = %w[
   lsb-release
   software-properties-common
   apt-transport-https
-]
+)
 
 # Sysctl settings for performance
 default['vectorflow']['base']['sysctl'] = {
@@ -59,9 +59,9 @@ default['vectorflow']['base']['limits'] = {
 }
 
 # NTP servers
-default['vectorflow']['base']['ntp_servers'] = %w[
+default['vectorflow']['base']['ntp_servers'] = %w(
   0.pool.ntp.org
   1.pool.ntp.org
   2.pool.ntp.org
   3.pool.ntp.org
-]
+)

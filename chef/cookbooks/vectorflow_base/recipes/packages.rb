@@ -40,7 +40,7 @@ end
 execute 'generate-locale' do
   command "locale-gen #{node['vectorflow']['base']['locale']}"
   not_if "locale -a | grep -q #{node['vectorflow']['base']['locale'].gsub('.', '\\.')}"
-  only_if { node['platform_family'] == 'debian' }
+  only_if { platform_family?('debian') }
 end
 
 log 'base_packages_complete' do

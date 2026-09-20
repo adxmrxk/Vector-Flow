@@ -7,9 +7,9 @@ version '1.0.0'
 chef_version '>= 16.0'
 
 supports 'ubuntu', '>= 20.04'
-supports 'debian', '>= 10'
-supports 'centos', '>= 8'
-supports 'amazon', '>= 2'
+supports 'debian', '>= 10.0'
+supports 'centos', '>= 8.0'
+supports 'amazon', '>= 2.0'
 
 depends 'apt', '~> 7.0'
 depends 'yum', '~> 7.0'

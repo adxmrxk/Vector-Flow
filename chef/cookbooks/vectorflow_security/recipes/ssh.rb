@@ -25,7 +25,7 @@ end
 
 # Ensure SSH service is running
 service 'sshd' do
-  service_name node['platform_family'] == 'debian' ? 'ssh' : 'sshd'
+  service_name platform_family?('debian') ? 'ssh' : 'sshd'
   action [:enable, :start]
 end
 
@@ -37,7 +37,7 @@ directory '/etc/ssh' do
 end
 
 # Secure SSH host keys
-%w[ssh_host_rsa_key ssh_host_ecdsa_key ssh_host_ed25519_key].each do |key|
+%w(ssh_host_rsa_key ssh_host_ecdsa_key ssh_host_ed25519_key).each do |key|
   file "/etc/ssh/#{key}" do
     mode '0600'
     only_if { ::File.exist?("/etc/ssh/#{key}") }

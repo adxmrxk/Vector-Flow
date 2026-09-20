@@ -5,7 +5,7 @@
 # Installs kubectl CLI
 #
 
-k8s_version = node['vectorflow']['kubernetes']['version']
+node['vectorflow']['kubernetes']['version']
 
 # Download and install kubectl
 execute 'install-kubectl' do
@@ -50,7 +50,7 @@ ruby_block 'add-kubectl-aliases-to-bashrc' do
       unless content.include?('.kubectl_aliases')
         ::File.open(bashrc, 'a') do |f|
           f.puts "\n# kubectl aliases"
-          f.puts "[ -f ~/.kubectl_aliases ] && source ~/.kubectl_aliases"
+          f.puts '[ -f ~/.kubectl_aliases ] && source ~/.kubectl_aliases'
         end
       end
     end

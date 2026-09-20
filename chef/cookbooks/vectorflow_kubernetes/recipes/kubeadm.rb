@@ -26,7 +26,7 @@ ruby_block 'remove-swap-fstab' do
 end
 
 # Load required kernel modules
-%w[overlay br_netfilter].each do |mod|
+%w(overlay br_netfilter).each do |mod|
   execute "modprobe-#{mod}" do
     command "modprobe #{mod}"
     not_if "lsmod | grep -q #{mod}"
@@ -74,19 +74,14 @@ when 'debian'
     owner 'root'
     group 'root'
     mode '0644'
-    notifies :run, 'execute[apt-update-k8s]', :immediately
+    notifies :update, 'apt_update[apt-update-k8s]', :immediately
   end
 
-  execute 'apt-update-k8s' do
-    command 'apt-get update'
+  apt_update 'apt-update-k8s' do
     action :nothing
   end
 
-  %w[kubelet kubeadm kubectl].each do |pkg|
-    package pkg do
-      action :install
-    end
-  end
+  package %w(kubelet kubeadm kubectl)
 
   # Hold Kubernetes packages to prevent auto-update
   execute 'hold-k8s-packages' do
@@ -103,11 +98,7 @@ when 'rhel', 'amazon'
     enabled true
   end
 
-  %w[kubelet kubeadm kubectl].each do |pkg|
-    package pkg do
-      action :install
-    end
-  end
+  package %w(kubelet kubeadm kubectl)
 end
 
 # Enable and start kubelet

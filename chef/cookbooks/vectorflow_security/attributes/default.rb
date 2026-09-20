@@ -13,7 +13,7 @@ default['vectorflow']['security']['ssh'] = {
   'client_alive_interval' => 300,
   'client_alive_count_max' => 2,
   'allow_users' => ['vectorflow'],
-  'allow_groups' => ['vectorflow', 'sudo'],
+  'allow_groups' => %w(vectorflow sudo),
 }
 
 # Firewall configuration
@@ -50,7 +50,7 @@ default['vectorflow']['security']['auditd'] = {
 }
 
 # Security packages
-default['vectorflow']['security']['packages'] = %w[
+default['vectorflow']['security']['packages'] = %w(
   fail2ban
   ufw
   auditd
@@ -59,7 +59,7 @@ default['vectorflow']['security']['packages'] = %w[
   chkrootkit
   clamav
   clamav-daemon
-]
+)
 
 # Automatic security updates
 default['vectorflow']['security']['auto_updates'] = {

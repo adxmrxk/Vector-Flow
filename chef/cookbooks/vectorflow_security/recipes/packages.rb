@@ -15,10 +15,10 @@ node['vectorflow']['security']['packages'].each do |pkg|
 end
 
 # Remove unnecessary packages that could be security risks
-%w[telnet rsh-client rsh-redone-client].each do |pkg|
+%w(telnet rsh-client rsh-redone-client).each do |pkg|
   package pkg do
     action :purge
-    only_if { node['platform_family'] == 'debian' }
+    only_if { platform_family?('debian') }
   end
 end
 

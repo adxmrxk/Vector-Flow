@@ -16,7 +16,7 @@ default['vectorflow']['kubernetes']['minikube'] = {
   'disk_size' => '40g',
   'kubernetes_version' => 'v1.29.0',
   'container_runtime' => 'docker',
-  'addons' => %w[ingress metrics-server dashboard storage-provisioner],
+  'addons' => %w(ingress metrics-server dashboard storage-provisioner),
 }
 
 # kubectl configuration

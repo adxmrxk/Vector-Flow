@@ -42,7 +42,7 @@ directory node['vectorflow']['base']['config_dir'] do
 end
 
 # Create subdirectories
-%w[models cache tmp].each do |subdir|
+%w(models cache tmp).each do |subdir|
   directory "#{node['vectorflow']['base']['data_dir']}/#{subdir}" do
     owner node['vectorflow']['base']['user']
     group node['vectorflow']['base']['group']

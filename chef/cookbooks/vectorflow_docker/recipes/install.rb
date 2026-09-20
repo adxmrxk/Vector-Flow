@@ -6,10 +6,10 @@
 #
 
 # Remove old versions
-%w[docker docker-engine docker.io containerd runc].each do |pkg|
+%w(docker docker-engine docker.io containerd runc).each do |pkg|
   package pkg do
     action :purge
-    only_if { node['platform_family'] == 'debian' }
+    only_if { platform_family?('debian') }
   end
 end
 
@@ -29,16 +29,15 @@ when 'debian'
     owner 'root'
     group 'root'
     mode '0644'
-    notifies :run, 'execute[apt-update-docker]', :immediately
+    notifies :update, 'apt_update[apt-update-docker]', :immediately
   end
 
-  execute 'apt-update-docker' do
-    command 'apt-get update'
+  apt_update 'apt-update-docker' do
     action :nothing
   end
 
   # Install Docker packages
-  %w[docker-ce docker-ce-cli containerd.io docker-buildx-plugin].each do |pkg|
+  %w(docker-ce docker-ce-cli containerd.io docker-buildx-plugin).each do |pkg|
     package pkg do
       action :install
       options '--allow-downgrades' if node['vectorflow']['docker']['version'] != ''
@@ -50,18 +49,14 @@ when 'rhel', 'amazon'
   # Add Docker repository
   yum_repository 'docker-ce' do
     description 'Docker CE Stable'
-    baseurl "https://download.docker.com/linux/centos/$releasever/$basearch/stable"
+    baseurl 'https://download.docker.com/linux/centos/$releasever/$basearch/stable'
     gpgkey 'https://download.docker.com/linux/centos/gpg'
     gpgcheck true
     enabled true
   end
 
   # Install Docker packages
-  %w[docker-ce docker-ce-cli containerd.io docker-buildx-plugin].each do |pkg|
-    package pkg do
-      action :install
-    end
-  end
+  package %w(docker-ce docker-ce-cli containerd.io docker-buildx-plugin)
 end
 
 # Ensure Docker service is enabled and started
